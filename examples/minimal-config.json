@@ -8,5 +8,12 @@
         }
       }
     }
+  },
+  "tools": {
+    "sandbox": {
+      "tools": {
+        "allow": ["group:runtime", "group:fs", "mcp-bridge"]
+      }
+    }
   }
 }

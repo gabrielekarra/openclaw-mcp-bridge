@@ -1,7 +1,7 @@
 {
   "name": "openclaw-mcp-bridge",
   "version": "0.1.0",
-  "description": "Context-aware MCP bridge for OpenClaw, powered by mcp-use",
+  "description": "Context-aware MCP bridge for OpenClaw — connect any MCP server without the token tax. Powered by mcp-use.",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -16,13 +16,15 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "pnpm build && pnpm test"
   },
   "dependencies": {
     "mcp-use": "latest"
@@ -151,13 +153,22 @@
       "label": "Cache Settings"
     }
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gabrielekarra/openclaw-mcp-bridge"
+  },
   "license": "MIT",
   "author": "Gabriele",
+  "engines": {
+    "node": ">=18"
+  },
   "keywords": [
     "openclaw",
     "mcp",
     "model-context-protocol",
+    "mcp-use",
+    "ai-agent",
     "plugin",
-    "mcp-use"
+    "tools"
   ]
 }

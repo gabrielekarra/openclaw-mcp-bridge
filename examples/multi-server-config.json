@@ -22,22 +22,30 @@
               "categories": ["code", "issues", "repos"]
             },
             {
-              "name": "custom-api",
+              "name": "stripe",
               "transport": "http",
-              "url": "http://localhost:8080/mcp",
-              "headers": { "Authorization": "Bearer ${API_TOKEN}" },
-              "categories": ["internal"]
+              "url": "http://localhost:3000/mcp",
+              "headers": { "Authorization": "Bearer ${STRIPE_KEY}" },
+              "categories": ["payments", "billing"]
             }
           ],
           "analyzer": {
             "maxToolsPerTurn": 5,
-            "relevanceThreshold": 0.3
+            "relevanceThreshold": 0.3,
+            "highConfidenceThreshold": 0.7
           },
           "cache": {
             "enabled": true,
             "ttlMs": 30000
           }
         }
+      }
+    }
+  },
+  "tools": {
+    "sandbox": {
+      "tools": {
+        "allow": ["group:runtime", "group:fs", "mcp-bridge"]
       }
     }
   }

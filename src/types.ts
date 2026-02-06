@@ -14,15 +14,8 @@ export interface ServerEntry {
 export interface BridgeConfig {
   servers?: ServerEntry[];
   autoDiscover?: boolean;
-  analyzer?: {
-    maxToolsPerTurn?: number;
-    relevanceThreshold?: number;
-    highConfidenceThreshold?: number;
-  };
-  cache?: {
-    enabled?: boolean;
-    ttlMs?: number;
-  };
+  analyzer?: AnalyzerConfig;
+  cache?: CacheConfig;
 }
 
 /** MCP tool definition enriched with server metadata */
@@ -48,4 +41,43 @@ export class CachedToolSet {
   isStale(): boolean {
     return Date.now() - this.timestamp > CachedToolSet.TTL_MS;
   }
+}
+
+/** Context analyzer config */
+export interface AnalyzerConfig {
+  maxToolsPerTurn?: number;          // default: 5
+  relevanceThreshold?: number;       // default: 0.3
+  highConfidenceThreshold?: number;  // default: 0.7
+  recentToolBoost?: number;          // default: 0.15
+}
+
+/** Tool relevance score from context analysis */
+export interface RelevanceScore {
+  tool: ToolWithServer;
+  score: number;          // 0-1
+  matchType: 'keyword' | 'category' | 'history' | 'intent';
+}
+
+/** Compressed tool for minimal token usage */
+export interface CompressedTool {
+  name: string;
+  shortDescription: string;
+  parameters: Record<string, unknown>;
+  optionalHint: string | null;
+  _originalTool: ToolWithServer;
+}
+
+/** Result cache config */
+export interface CacheConfig {
+  enabled?: boolean;     // default: true
+  ttlMs?: number;        // default: 30000
+  maxEntries?: number;   // default: 100
+}
+
+/** Single cache entry */
+export interface CacheEntry {
+  key: string;
+  result: unknown;
+  timestamp: number;
+  ttlMs: number;
 }
