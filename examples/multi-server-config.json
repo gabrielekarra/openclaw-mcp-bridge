@@ -1,0 +1,44 @@
+{
+  "plugins": {
+    "entries": {
+      "mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "servers": [
+            {
+              "name": "notion",
+              "transport": "stdio",
+              "command": "npx",
+              "args": ["-y", "@notionhq/mcp"],
+              "env": { "NOTION_API_KEY": "${NOTION_API_KEY}" },
+              "categories": ["productivity", "notes", "docs"]
+            },
+            {
+              "name": "github",
+              "transport": "stdio",
+              "command": "npx",
+              "args": ["-y", "@modelcontextprotocol/server-github"],
+              "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" },
+              "categories": ["code", "issues", "repos"]
+            },
+            {
+              "name": "custom-api",
+              "transport": "http",
+              "url": "http://localhost:8080/mcp",
+              "headers": { "Authorization": "Bearer ${API_TOKEN}" },
+              "categories": ["internal"]
+            }
+          ],
+          "analyzer": {
+            "maxToolsPerTurn": 5,
+            "relevanceThreshold": 0.3
+          },
+          "cache": {
+            "enabled": true,
+            "ttlMs": 30000
+          }
+        }
+      }
+    }
+  }
+}

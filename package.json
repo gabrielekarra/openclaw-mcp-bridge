@@ -1,0 +1,163 @@
+{
+  "name": "openclaw-mcp-bridge",
+  "version": "0.1.0",
+  "description": "Context-aware MCP bridge for OpenClaw, powered by mcp-use",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "mcp-use": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.1",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  },
+  "openclaw": {
+    "extensions": [
+      {
+        "type": "tool",
+        "id": "mcp-bridge",
+        "entry": "dist/index.js"
+      }
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "servers": {
+        "type": "array",
+        "description": "MCP servers to connect to",
+        "items": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "stdio",
+                "http",
+                "sse"
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "url": {
+              "type": "string"
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "categories": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Hint categories for relevance matching"
+            }
+          }
+        }
+      },
+      "autoDiscover": {
+        "type": "boolean",
+        "default": true,
+        "description": "Auto-detect servers from ~/.mcp.json"
+      },
+      "analyzer": {
+        "type": "object",
+        "properties": {
+          "maxToolsPerTurn": {
+            "type": "number",
+            "default": 5
+          },
+          "relevanceThreshold": {
+            "type": "number",
+            "default": 0.3
+          },
+          "highConfidenceThreshold": {
+            "type": "number",
+            "default": 0.7
+          }
+        }
+      },
+      "cache": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "ttlMs": {
+            "type": "number",
+            "default": 30000
+          }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "servers": {
+      "label": "MCP Servers"
+    },
+    "autoDiscover": {
+      "label": "Auto-discover from ~/.mcp.json"
+    },
+    "analyzer": {
+      "label": "Analyzer Settings"
+    },
+    "cache": {
+      "label": "Cache Settings"
+    }
+  },
+  "license": "MIT",
+  "author": "Gabriele",
+  "keywords": [
+    "openclaw",
+    "mcp",
+    "model-context-protocol",
+    "plugin",
+    "mcp-use"
+  ]
+}

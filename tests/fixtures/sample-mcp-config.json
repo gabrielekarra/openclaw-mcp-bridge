@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "notion": {
+      "command": "npx",
+      "args": ["-y", "@notionhq/mcp"],
+      "env": {
+        "NOTION_API_KEY": "ntn_test123"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_test456"
+      }
+    },
+    "custom-api": {
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer test789"
+      }
+    },
+    "sse-server": {
+      "url": "http://localhost:9090/sse"
+    }
+  }
+}
