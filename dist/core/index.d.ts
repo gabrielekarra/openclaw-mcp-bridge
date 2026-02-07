@@ -99,9 +99,9 @@ declare class McpLayer {
 declare class ContextAnalyzer {
     private recentlyUsed;
     rank(messages: {
-        role: string;
-        content: string;
-    }[], allTools: ToolWithServer[], config?: AnalyzerConfig): RelevanceScore[];
+        role?: string;
+        content?: unknown;
+    }[] | undefined, allTools: ToolWithServer[] | undefined, config?: AnalyzerConfig): RelevanceScore[];
     private scoreKeyword;
     private scoreCategory;
     private scoreIntent;

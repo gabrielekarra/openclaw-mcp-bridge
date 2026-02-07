@@ -2,12 +2,44 @@ import { McpLayer } from './mcp-layer.js';
 import { ContextAnalyzer } from './context-analyzer.js';
 import { SchemaCompressor } from './schema-compressor.js';
 import { ResultCache } from './result-cache.js';
-import type { BridgeConfig, ToolWithServer } from './types.js';
+import type { BridgeConfig, RelevanceScore, ToolWithServer } from './types.js';
 
 interface McpToolSchema {
   name: string;
   description?: string;
   inputSchema: Record<string, unknown>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
+}
+
+function parseRecordJson(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'string') return asRecord(value);
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function extractNeed(params: unknown): string {
+  if (typeof params === 'string') return params;
+  const root = asRecord(params);
+  const input = asRecord(root?.input);
+  const args = asRecord(root?.args);
+  const parameters = asRecord(root?.parameters);
+  const toolInput = asRecord(root?.toolInput);
+  const parsedArguments = parseRecordJson(root?.arguments);
+
+  const candidate = root?.need
+    ?? input?.need
+    ?? parsedArguments?.need
+    ?? args?.need
+    ?? parameters?.need
+    ?? toolInput?.need;
+
+  return typeof candidate === 'string' ? candidate : '';
 }
 
 export class Aggregator {
@@ -51,7 +83,7 @@ export class Aggregator {
         properties: {
           need: { type: 'string', description: 'What you need to accomplish. Example: "create a github issue", "search notion pages". Use empty string to list all available tools.' },
         },
-        required: ['need'],
+        required: [],
       },
     });
 
@@ -79,7 +111,7 @@ export class Aggregator {
     params: Record<string, unknown>
   ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
     if (name === 'find_tools') {
-      return this.handleFindTools(params as { need: string });
+      return this.handleFindTools(params);
     }
 
     const route = this.routeMap.get(name);
@@ -109,24 +141,73 @@ export class Aggregator {
   }
 
   private async handleFindTools(
-    params: { need: string }
+    params: unknown
   ): Promise<{ content: { type: string; text: string }[] }> {
-    const need = typeof params?.need === 'string' ? params.need : '';
-    const allTools = await this.mcpLayer.discoverTools();
+    const need = extractNeed(params);
+
+    let allTools: ToolWithServer[] = [];
+    try {
+      allTools = await this.mcpLayer.discoverTools();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ found: 0, tools: [], error: `Discovery failed: ${msg}` }) }],
+      };
+    }
+
     if (!Array.isArray(allTools) || allTools.length === 0) {
       return {
         content: [{ type: 'text', text: JSON.stringify({ found: 0, tools: [], message: 'No MCP servers configured or no tools available.' }) }],
       };
     }
 
-    const ranked = this.analyzer.rank(
-      [{ role: 'user', content: need }],
-      allTools,
-      this.config.analyzer
-    ) ?? [];
+    if (need.trim() === '') {
+      for (const tool of allTools) {
+        const compressed = this.compressor.compress(tool);
+        this.routeMap.set(compressed.name, {
+          serverName: tool.serverName,
+          toolName: tool.name,
+        });
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            found: allTools.length,
+            totalAvailable: allTools.length,
+            tools: allTools.slice(0, 20).map(t => ({
+              name: t.name,
+              server: t.serverName,
+              description: (t.description ?? '').slice(0, 80),
+            })),
+            hint: 'Showing all tools. Pass a "need" parameter to filter by relevance.',
+          }),
+        }],
+      };
+    }
+
+    let ranked: RelevanceScore[] = [];
+    try {
+      ranked = this.analyzer.rank(
+        [{ role: 'user', content: need }],
+        allTools,
+        this.config.analyzer
+      ) ?? [];
+    } catch {
+      ranked = allTools.map(t => ({ tool: t, score: 0.5, matchType: 'keyword' as const }));
+    }
+
+    if (!Array.isArray(ranked)) ranked = [];
+
+    const threshold = this.config.analyzer?.relevanceThreshold ?? 0.3;
+    const maxTools = this.config.analyzer?.maxToolsPerTurn ?? 5;
+    const filtered = ranked
+      .filter(r => typeof r?.score === 'number' && r.score >= threshold)
+      .slice(0, maxTools);
 
     // Ensure discovered tools are in route map
-    for (const match of ranked) {
+    for (const match of filtered) {
       const compressed = this.compressor.compress(match.tool);
       this.routeMap.set(compressed.name, {
         serverName: match.tool.serverName,
@@ -134,18 +215,21 @@ export class Aggregator {
       });
     }
 
-    const toolNames = ranked.map(
-      m => `${m.tool.serverName}/${m.tool.name} (${Math.round(m.score * 100)}%)`
-    );
+    const toolNames = filtered.map(m => ({
+      name: m.tool.name,
+      server: m.tool.serverName,
+      relevance: `${Math.round(m.score * 100)}%`,
+      description: (m.tool.description ?? '').slice(0, 80),
+    }));
 
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          found: ranked.length,
+          found: toolNames.length,
           tools: toolNames,
-          message: ranked.length > 0
-            ? `Found ${ranked.length} relevant tool(s). They are now available for use.`
+          hint: toolNames.length > 0
+            ? 'Call any tool by name.'
             : `No tools matched "${need}". Try rephrasing your request.`,
         }),
       }],

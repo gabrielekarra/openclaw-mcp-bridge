@@ -221,22 +221,33 @@ var INTENT_TOOL_PATTERNS = [
   [DELETE_VERBS, /\b(delete|remove|clear|drop|destroy|cancel)\b/i]
 ];
 function splitToolName(name) {
+  if (typeof name !== "string" || name.trim() === "") return [];
   return name.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-]+/g, " ").toLowerCase().split(/\s+/).filter((w) => w.length > 0);
 }
 function extractWords(text) {
+  if (typeof text !== "string" || text.trim() === "") return [];
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 1 && !STOPWORDS.has(w));
+}
+function normalizeCategories(categories) {
+  if (!Array.isArray(categories)) return [];
+  return categories.filter((cat) => typeof cat === "string");
 }
 var ContextAnalyzer = class {
   recentlyUsed = /* @__PURE__ */ new Map();
   rank(messages, allTools, config) {
-    if (!Array.isArray(messages) || !Array.isArray(allTools) || allTools.length === 0) return [];
-    const maxTools = config?.maxToolsPerTurn ?? 5;
-    const threshold = config?.relevanceThreshold ?? 0.3;
-    const userMsgs = messages.filter((m) => m.role === "user").slice(-3);
+    if (!Array.isArray(allTools) || allTools.length === 0) return [];
+    const maxTools = Math.max(1, config?.maxToolsPerTurn ?? 5);
+    const threshold = Number.isFinite(config?.relevanceThreshold) ? Number(config?.relevanceThreshold) : 0.3;
+    const userMsgs = Array.isArray(messages) ? messages.filter((m) => m?.role === "user").slice(-3) : [];
     if (userMsgs.length === 0) return [];
-    const messageText = userMsgs.map((m) => m.content ?? "").join(" ");
+    const messageText = userMsgs.map((m) => typeof m.content === "string" ? m.content : "").join(" ").trim();
+    if (messageText === "") {
+      return allTools.map((tool) => ({ tool, score: 0.5, matchType: "keyword" })).slice(0, maxTools);
+    }
     const words = extractWords(messageText);
-    if (words.length === 0) return [];
+    if (words.length === 0) {
+      return allTools.map((tool) => ({ tool, score: 0.5, matchType: "keyword" })).slice(0, maxTools);
+    }
     const scores = [];
     for (const tool of allTools) {
       const kw = this.scoreKeyword(words, tool);
@@ -256,7 +267,11 @@ var ContextAnalyzer = class {
     return scores.sort((a, b) => b.score - a.score).slice(0, maxTools);
   }
   scoreKeyword(words, tool) {
-    const toolWords = /* @__PURE__ */ new Set([...splitToolName(tool.name), ...extractWords(tool.description ?? "")]);
+    if (!Array.isArray(words) || words.length === 0) return 0;
+    const toolWords = /* @__PURE__ */ new Set([
+      ...splitToolName(tool?.name ?? ""),
+      ...extractWords(typeof tool?.description === "string" ? tool.description : "")
+    ]);
     if (toolWords.size === 0 || words.length === 0) return 0;
     let matched = 0;
     for (const w of words) {
@@ -270,16 +285,18 @@ var ContextAnalyzer = class {
     return matched / words.length;
   }
   scoreCategory(messageText, tool) {
-    if (tool.categories.length === 0) return 0;
+    const categories = normalizeCategories(tool?.categories);
+    if (categories.length === 0) return 0;
     const cats = /* @__PURE__ */ new Set();
     for (const [pat, c] of INTENT_CATEGORIES) if (pat.test(messageText)) c.forEach((x) => cats.add(x));
     if (cats.size === 0) return 0;
     let overlap = 0;
-    for (const c of tool.categories) if (cats.has(c.toLowerCase())) overlap++;
-    return overlap / tool.categories.length;
+    for (const c of categories) if (cats.has(c.toLowerCase())) overlap++;
+    return overlap / categories.length;
   }
   scoreIntent(words, tool) {
-    const toolText = tool.name + " " + (tool.description ?? "");
+    if (!Array.isArray(words) || words.length === 0) return 0;
+    const toolText = `${tool?.name ?? ""} ${typeof tool?.description === "string" ? tool.description : ""}`;
     for (const [verbs, pat] of INTENT_TOOL_PATTERNS) {
       if (words.some((w) => verbs.has(w)) && pat.test(toolText)) return 1;
     }
@@ -446,6 +463,28 @@ var ResultCache = class {
 };
 
 // src/core/aggregator.ts
+function asRecord(value) {
+  return typeof value === "object" && value !== null ? value : null;
+}
+function parseRecordJson(value) {
+  if (typeof value !== "string") return asRecord(value);
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+function extractNeed(params) {
+  if (typeof params === "string") return params;
+  const root = asRecord(params);
+  const input = asRecord(root?.input);
+  const args = asRecord(root?.args);
+  const parameters = asRecord(root?.parameters);
+  const toolInput = asRecord(root?.toolInput);
+  const parsedArguments = parseRecordJson(root?.arguments);
+  const candidate = root?.need ?? input?.need ?? parsedArguments?.need ?? args?.need ?? parameters?.need ?? toolInput?.need;
+  return typeof candidate === "string" ? candidate : "";
+}
 var Aggregator = class {
   constructor(config) {
     this.config = config;
@@ -482,7 +521,7 @@ var Aggregator = class {
         properties: {
           need: { type: "string", description: 'What you need to accomplish. Example: "create a github issue", "search notion pages". Use empty string to list all available tools.' }
         },
-        required: ["need"]
+        required: []
       }
     });
     for (const [compressedName] of this.routeMap) {
@@ -523,35 +562,79 @@ var Aggregator = class {
     await this.mcpLayer.shutdown();
   }
   async handleFindTools(params) {
-    const need = typeof params?.need === "string" ? params.need : "";
-    const allTools = await this.mcpLayer.discoverTools();
+    const need = extractNeed(params);
+    let allTools = [];
+    try {
+      allTools = await this.mcpLayer.discoverTools();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ found: 0, tools: [], error: `Discovery failed: ${msg}` }) }]
+      };
+    }
     if (!Array.isArray(allTools) || allTools.length === 0) {
       return {
         content: [{ type: "text", text: JSON.stringify({ found: 0, tools: [], message: "No MCP servers configured or no tools available." }) }]
       };
     }
-    const ranked = this.analyzer.rank(
-      [{ role: "user", content: need }],
-      allTools,
-      this.config.analyzer
-    ) ?? [];
-    for (const match of ranked) {
+    if (need.trim() === "") {
+      for (const tool of allTools) {
+        const compressed = this.compressor.compress(tool);
+        this.routeMap.set(compressed.name, {
+          serverName: tool.serverName,
+          toolName: tool.name
+        });
+      }
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            found: allTools.length,
+            totalAvailable: allTools.length,
+            tools: allTools.slice(0, 20).map((t) => ({
+              name: t.name,
+              server: t.serverName,
+              description: (t.description ?? "").slice(0, 80)
+            })),
+            hint: 'Showing all tools. Pass a "need" parameter to filter by relevance.'
+          })
+        }]
+      };
+    }
+    let ranked = [];
+    try {
+      ranked = this.analyzer.rank(
+        [{ role: "user", content: need }],
+        allTools,
+        this.config.analyzer
+      ) ?? [];
+    } catch {
+      ranked = allTools.map((t) => ({ tool: t, score: 0.5, matchType: "keyword" }));
+    }
+    if (!Array.isArray(ranked)) ranked = [];
+    const threshold = this.config.analyzer?.relevanceThreshold ?? 0.3;
+    const maxTools = this.config.analyzer?.maxToolsPerTurn ?? 5;
+    const filtered = ranked.filter((r) => typeof r?.score === "number" && r.score >= threshold).slice(0, maxTools);
+    for (const match of filtered) {
       const compressed = this.compressor.compress(match.tool);
       this.routeMap.set(compressed.name, {
         serverName: match.tool.serverName,
         toolName: match.tool.name
       });
     }
-    const toolNames = ranked.map(
-      (m) => `${m.tool.serverName}/${m.tool.name} (${Math.round(m.score * 100)}%)`
-    );
+    const toolNames = filtered.map((m) => ({
+      name: m.tool.name,
+      server: m.tool.serverName,
+      relevance: `${Math.round(m.score * 100)}%`,
+      description: (m.tool.description ?? "").slice(0, 80)
+    }));
     return {
       content: [{
         type: "text",
         text: JSON.stringify({
-          found: ranked.length,
+          found: toolNames.length,
           tools: toolNames,
-          message: ranked.length > 0 ? `Found ${ranked.length} relevant tool(s). They are now available for use.` : `No tools matched "${need}". Try rephrasing your request.`
+          hint: toolNames.length > 0 ? "Call any tool by name." : `No tools matched "${need}". Try rephrasing your request.`
         })
       }]
     };

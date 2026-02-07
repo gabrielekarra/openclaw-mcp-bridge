@@ -28,34 +28,58 @@ const INTENT_TOOL_PATTERNS: [Set<string>, RegExp][] = [
 ];
 
 function splitToolName(name: string): string[] {
+  if (typeof name !== 'string' || name.trim() === '') return [];
   return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_\-]+/g, ' ')
     .toLowerCase().split(/\s+/).filter(w => w.length > 0);
 }
 
 function extractWords(text: string): string[] {
+  if (typeof text !== 'string' || text.trim() === '') return [];
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/).filter(w => w.length > 1 && !STOPWORDS.has(w));
+}
+
+function normalizeCategories(categories: unknown): string[] {
+  if (!Array.isArray(categories)) return [];
+  return categories.filter((cat): cat is string => typeof cat === 'string');
 }
 
 export class ContextAnalyzer {
   private recentlyUsed = new Map<string, number>();
 
   rank(
-    messages: { role: string; content: string }[],
-    allTools: ToolWithServer[],
+    messages: { role?: string; content?: unknown }[] | undefined,
+    allTools: ToolWithServer[] | undefined,
     config?: AnalyzerConfig
   ): RelevanceScore[] {
-    if (!Array.isArray(messages) || !Array.isArray(allTools) || allTools.length === 0) return [];
+    if (!Array.isArray(allTools) || allTools.length === 0) return [];
 
-    const maxTools = config?.maxToolsPerTurn ?? 5;
-    const threshold = config?.relevanceThreshold ?? 0.3;
+    const maxTools = Math.max(1, config?.maxToolsPerTurn ?? 5);
+    const threshold = Number.isFinite(config?.relevanceThreshold)
+      ? Number(config?.relevanceThreshold)
+      : 0.3;
 
-    const userMsgs = messages.filter(m => m.role === 'user').slice(-3);
+    const userMsgs = Array.isArray(messages)
+      ? messages.filter(m => m?.role === 'user').slice(-3)
+      : [];
     if (userMsgs.length === 0) return [];
 
-    const messageText = userMsgs.map(m => m.content ?? '').join(' ');
+    const messageText = userMsgs
+      .map(m => (typeof m.content === 'string' ? m.content : ''))
+      .join(' ')
+      .trim();
+    if (messageText === '') {
+      return allTools
+        .map(tool => ({ tool, score: 0.5, matchType: 'keyword' as const }))
+        .slice(0, maxTools);
+    }
+
     const words = extractWords(messageText);
-    if (words.length === 0) return [];
+    if (words.length === 0) {
+      return allTools
+        .map(tool => ({ tool, score: 0.5, matchType: 'keyword' as const }))
+        .slice(0, maxTools);
+    }
 
     const scores: RelevanceScore[] = [];
     for (const tool of allTools) {
@@ -77,7 +101,11 @@ export class ContextAnalyzer {
   }
 
   private scoreKeyword(words: string[], tool: ToolWithServer): number {
-    const toolWords = new Set([...splitToolName(tool.name), ...extractWords(tool.description ?? '')]);
+    if (!Array.isArray(words) || words.length === 0) return 0;
+    const toolWords = new Set([
+      ...splitToolName(tool?.name ?? ''),
+      ...extractWords(typeof tool?.description === 'string' ? tool.description : ''),
+    ]);
     if (toolWords.size === 0 || words.length === 0) return 0;
     let matched = 0;
     for (const w of words) {
@@ -89,17 +117,19 @@ export class ContextAnalyzer {
   }
 
   private scoreCategory(messageText: string, tool: ToolWithServer): number {
-    if (tool.categories.length === 0) return 0;
+    const categories = normalizeCategories(tool?.categories);
+    if (categories.length === 0) return 0;
     const cats = new Set<string>();
     for (const [pat, c] of INTENT_CATEGORIES) if (pat.test(messageText)) c.forEach(x => cats.add(x));
     if (cats.size === 0) return 0;
     let overlap = 0;
-    for (const c of tool.categories) if (cats.has(c.toLowerCase())) overlap++;
-    return overlap / tool.categories.length;
+    for (const c of categories) if (cats.has(c.toLowerCase())) overlap++;
+    return overlap / categories.length;
   }
 
   private scoreIntent(words: string[], tool: ToolWithServer): number {
-    const toolText = tool.name + ' ' + (tool.description ?? '');
+    if (!Array.isArray(words) || words.length === 0) return 0;
+    const toolText = `${tool?.name ?? ''} ${typeof tool?.description === 'string' ? tool.description : ''}`;
     for (const [verbs, pat] of INTENT_TOOL_PATTERNS) {
       if (words.some(w => verbs.has(w)) && pat.test(toolText)) return 1.0;
     }

@@ -91,7 +91,22 @@ describe('Aggregator', () => {
     expect(result.content).toHaveLength(1);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.found).toBeGreaterThan(0);
-    expect(parsed.tools.some((t: string) => t.includes('notion/create_page'))).toBe(true);
+    expect(parsed.tools.some((t: { server: string; name: string }) => (
+      t.server === 'notion' && t.name === 'create_page'
+    ))).toBe(true);
+  });
+
+  it('callTool("find_tools") with empty need returns all tools', async () => {
+    const result = await aggregator.callTool('find_tools', { need: '' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.found).toBeGreaterThan(0);
+    expect(parsed.totalAvailable).toBeGreaterThan(0);
+  });
+
+  it('callTool("find_tools") extracts wrapped input.need', async () => {
+    const result = await aggregator.callTool('find_tools', { input: { need: 'create page' } });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.found).toBeGreaterThan(0);
   });
 
   it('callTool routes compressed name to correct downstream server', async () => {

@@ -43,6 +43,32 @@ For Claude Desktop, add to your `claude_desktop_config.json`:
 }
 ```
 
+## Registered Tools
+
+The plugin registers these tools that the agent can use:
+
+### `mcp_find_tools`
+Discovers available tools from connected MCP servers.
+
+**Ask the agent:**
+- "Find tools to create a GitHub issue"
+- "What tools are available for Notion?"
+- "List all MCP tools"
+
+### `mcp_list_servers`
+Shows connected MCP servers and their tool counts.
+
+**Ask the agent:**
+- "What MCP servers are connected?"
+- "Show me available servers"
+
+### How it works
+1. You ask the agent to do something that needs an external tool
+2. Agent calls `mcp_find_tools` with your request
+3. Plugin searches all connected MCP servers, ranks tools by relevance
+4. Agent picks the best tool and calls it directly
+5. Plugin routes the call to the correct server and returns results
+
 ## Configuration (OpenClaw Plugin)
 
 Add to `~/.openclaw/openclaw.json`:
@@ -121,40 +147,6 @@ You can also define servers directly in the plugin config:
 
 See [`examples/`](./examples) for copy-pasteable config snippets.
 
-## Usage
-
-The plugin registers two tools that the agent can use:
-
-### `mcp_find_tools`
-
-Discovers relevant tools from your connected MCP servers.
-
-**Examples — just ask the agent naturally:**
-- "Find tools to create a GitHub issue"
-- "What MCP tools can search my Notion workspace?"
-- "Show me all available MCP tools"
-
-The agent will call `mcp_find_tools` automatically and get back a ranked list of matching tools, which it can then use directly.
-
-### `mcp_list_servers`
-
-Shows all connected MCP servers and their status.
-
-**Examples:**
-- "What MCP servers are connected?"
-- "Check MCP status"
-- "List my tool servers"
-
-### How the flow works
-
-1. You ask the agent to do something that needs an external tool
-2. Agent calls `mcp_find_tools` with your request
-3. Plugin searches across all MCP servers, ranks results by relevance
-4. Agent receives matching tools and calls the one it needs
-5. Plugin routes the call to the correct MCP server and returns the result
-
-All of this happens automatically — you just talk to the agent normally.
-
 ## How It Works
 
 A typical setup with 5 MCP servers exposes 50+ tools. Dumping all descriptions into the agent context costs ~5,000 tokens per turn — even when you're just asking about the weather.
@@ -207,7 +199,7 @@ Our solution:
 ```bash
 pnpm install        # install deps
 pnpm build          # build to dist/ (multi-entry: core, server, plugin)
-pnpm test           # run tests (74 tests)
+pnpm test           # run tests (95 tests)
 pnpm lint           # type check
 pnpm start          # run MCP aggregator server (stdio)
 ```

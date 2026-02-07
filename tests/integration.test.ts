@@ -74,7 +74,7 @@ describe('Integration: full plugin flow', () => {
     expect(api._tools.has('mcp_find_tools')).toBe(true);
     expect(api._tools.has('mcp_list_servers')).toBe(true);
     const findTool = api._tools.get('mcp_find_tools');
-    expect(findTool.parameters.required).toContain('need');
+    expect(findTool.parameters.required).toEqual([]);
   });
 
   it('registers onShutdown and onBeforeAgentTurn hooks', () => {
@@ -104,7 +104,7 @@ describe('Integration: full plugin flow', () => {
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'xyzzy foobar' });
     expect(result.found).toBe(0);
-    expect(result.message).toContain('No tools matched');
+    expect(result.hint).toContain('No tools matched');
   });
 
   describe('full discover → filter → compress → register → call → cache flow', () => {
@@ -131,9 +131,10 @@ describe('Integration: full plugin flow', () => {
 
       // Step 2: Verify filtered results
       expect(result.found).toBeGreaterThan(0);
-      expect(result.tools.some((t: string) => t.includes('notion/create_page'))).toBe(true);
-      // Results include match percentages
-      for (const t of result.tools) expect(t).toMatch(/\(\d+%\)$/);
+      expect(result.tools.some((t: { server: string; name: string }) => (
+        t.server === 'notion' && t.name === 'create_page'
+      ))).toBe(true);
+      for (const t of result.tools) expect(t.relevance).toMatch(/\d+%/);
 
       // Step 3: Verify compressed tools were registered
       const registeredNames = [...api._tools.keys()].filter(k => k.startsWith('mcp_'));
@@ -157,12 +158,12 @@ describe('Integration: full plugin flow', () => {
 
     it('notion tools rank higher than github for notion-specific queries', async () => {
       const result = await api._tools.get('mcp_find_tools').execute({ need: 'create a page in notion workspace' });
-      expect(result.tools[0]).toContain('notion');
+      expect(result.tools[0].server).toBe('notion');
     });
 
     it('github tools rank higher for code-related queries', async () => {
       const result = await api._tools.get('mcp_find_tools').execute({ need: 'list issues in github repository' });
-      expect(result.tools[0]).toContain('github');
+      expect(result.tools[0].server).toBe('github');
     });
 
     it('caches read-only tool results on second call', async () => {

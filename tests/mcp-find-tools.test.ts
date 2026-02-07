@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ContextAnalyzer } from '../src/core/context-analyzer.js';
 
 /**
  * Edge-case tests for mcp_find_tools — verifying it never crashes
@@ -60,7 +61,7 @@ describe('mcp_find_tools edge cases', () => {
     expect(result.hint).toBeDefined();
   });
 
-  it('empty need string — returns result, no crash', async () => {
+  it('empty need string — returns all tools, no crash', async () => {
     const api = createMockApi({
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
@@ -69,8 +70,10 @@ describe('mcp_find_tools edge cases', () => {
     mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: '' });
-    expect(result).toBeDefined();
-    expect(result.found).toBeTypeOf('number');
+    expect(result.found).toBeGreaterThan(0);
+    expect(result.totalAvailable).toBeGreaterThan(0);
+    expect(result.tools[0]).toHaveProperty('name');
+    expect(result.tools[0]).toHaveProperty('server');
   });
 
   it('undefined params — returns result, no crash', async () => {
@@ -83,14 +86,30 @@ describe('mcp_find_tools edge cases', () => {
     expect(result.found).toBe(0);
   });
 
-  it('empty object params (no need field) — returns result, no crash', async () => {
-    const api = createMockApi({ servers: [], autoDiscover: false });
-    mockClientInstance.getServerNames.mockReturnValue([]);
+  it('explicit undefined need field — returns all tools', async () => {
+    const api = createMockApi({
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
+      autoDiscover: false,
+    });
+    mockClientInstance.getServerNames.mockReturnValue(['notion']);
+    mcpBridge(api);
+
+    const result = await api._tools.get('mcp_find_tools').execute({ need: undefined });
+    expect(result.found).toBeGreaterThan(0);
+    expect(result.totalAvailable).toBeGreaterThan(0);
+  });
+
+  it('empty object params (no need field) — returns all tools, no crash', async () => {
+    const api = createMockApi({
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
+      autoDiscover: false,
+    });
+    mockClientInstance.getServerNames.mockReturnValue(['notion']);
     mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({});
     expect(result).toBeDefined();
-    expect(result.found).toBe(0);
+    expect(result.found).toBeGreaterThan(0);
   });
 
   it('server configured but unreachable — graceful error, no crash', async () => {
@@ -124,6 +143,87 @@ describe('mcp_find_tools edge cases', () => {
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'create a page' });
     expect(result.found).toBeGreaterThan(0);
     expect(result.tools.length).toBeGreaterThan(0);
+    expect(result.tools[0]).toHaveProperty('relevance');
+  });
+
+  it.each([
+    { input: { need: 'create page' } },
+    { arguments: { need: 'create page' } },
+    { args: { need: 'create page' } },
+    { parameters: { need: 'create page' } },
+    { toolInput: { need: 'create page' } },
+  ])('extracts need from wrapped parameter shape: $0', async (payload) => {
+    mockClientInstance.getServerNames.mockReturnValue(['notion']);
+    const api = createMockApi({
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
+      autoDiscover: false,
+      analyzer: { relevanceThreshold: 0.1 },
+    });
+    mcpBridge(api);
+
+    const result = await api._tools.get('mcp_find_tools').execute(payload);
+    expect(result.found).toBeGreaterThan(0);
+  });
+
+  it('accepts raw string params as need', async () => {
+    mockClientInstance.getServerNames.mockReturnValue(['notion']);
+    const api = createMockApi({
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
+      autoDiscover: false,
+      analyzer: { relevanceThreshold: 0.1 },
+    });
+    mcpBridge(api);
+
+    const result = await api._tools.get('mcp_find_tools').execute('create page');
+    expect(result.found).toBeGreaterThan(0);
+  });
+
+  it('extracts params when runtime passes (toolCallId, params)', async () => {
+    mockClientInstance.getServerNames.mockReturnValue(['notion']);
+    const api = createMockApi({
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
+      autoDiscover: false,
+      analyzer: { relevanceThreshold: 0.1 },
+    });
+    mcpBridge(api);
+
+    const result = await api._tools.get('mcp_find_tools').execute(
+      'chatcmpl-tool-2291b82deb5e4538b27009be0cc08d4d',
+      { need: 'create page' }
+    );
+    expect(result.found).toBeGreaterThan(0);
+  });
+
+  it('returns error payload when discovery fails', async () => {
+    mockClientInstance.getServerNames.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    const api = createMockApi({
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
+      autoDiscover: false,
+    });
+    mcpBridge(api);
+
+    const result = await api._tools.get('mcp_find_tools').execute({ need: 'anything' });
+    expect(result.found).toBe(0);
+    expect(result.error).toContain('Discovery failed');
+  });
+
+  it('falls back to neutral ranking when analyzer throws', async () => {
+    const rankSpy = vi.spyOn(ContextAnalyzer.prototype, 'rank').mockImplementationOnce(() => {
+      throw new Error('rank failed');
+    });
+    mockClientInstance.getServerNames.mockReturnValue(['notion']);
+    const api = createMockApi({
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
+      autoDiscover: false,
+      analyzer: { relevanceThreshold: 0.1 },
+    });
+    mcpBridge(api);
+
+    const result = await api._tools.get('mcp_find_tools').execute({ need: 'create page' });
+    expect(result.found).toBeGreaterThan(0);
+    rankSpy.mockRestore();
   });
 });
 
@@ -154,7 +254,8 @@ describe('mcp_list_servers edge cases', () => {
     const result = await api._tools.get('mcp_list_servers').execute({});
     expect(result.total).toBe(1);
     expect(result.servers[0].name).toBe('notion');
-    expect(result.servers[0].transport).toBe('stdio');
+    expect(result.servers[0].tools).toBeTypeOf('number');
+    expect(Array.isArray(result.servers[0].sampleTools)).toBe(true);
   });
 });
 
@@ -174,5 +275,21 @@ describe('onBeforeAgentTurn edge cases', () => {
       await expect(beforeTurn({})).resolves.not.toThrow();
       await expect(beforeTurn(undefined)).resolves.not.toThrow();
     }
+  });
+});
+
+describe('shutdown hook compatibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does not throw when onShutdown is missing', () => {
+    const api = {
+      config: { servers: [], autoDiscover: false },
+      registerTool: vi.fn(),
+      onBeforeAgentTurn: vi.fn(),
+    };
+
+    expect(() => mcpBridge(api)).not.toThrow();
   });
 });
