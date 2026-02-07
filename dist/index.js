@@ -7,7 +7,7 @@ import {
   ResultCache,
   SchemaCompressor,
   discoverFromMcpJson
-} from "./chunk-ND5WNCG5.js";
+} from "./chunk-4DJZ35CC.js";
 
 // src/plugin/index.ts
 var fallbackShutdownLayers = /* @__PURE__ */ new Set();

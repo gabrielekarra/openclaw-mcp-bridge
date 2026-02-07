@@ -99,6 +99,10 @@ describe('Aggregator', () => {
     expect(parsed.tools.some((t: { server: string; name: string }) => (
       t.server === 'notion' && t.name === 'create_page'
     ))).toBe(true);
+    expect(parsed.tools.some((t: { callableName?: string }) => (
+      typeof t.callableName === 'string' && t.callableName.length > 0
+    ))).toBe(true);
+    expect(parsed.hint).toContain('callableName');
   });
 
   it('callTool("find_tools") with empty need returns all tools', async () => {
@@ -106,6 +110,8 @@ describe('Aggregator', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.found).toBeGreaterThan(0);
     expect(parsed.totalAvailable).toBeGreaterThan(0);
+    expect(parsed.tools[0]).toHaveProperty('callableName');
+    expect(parsed.hint).toContain('mcp_<server>_<tool>');
   });
 
   it('callTool("find_tools") extracts wrapped input.need', async () => {

@@ -246,13 +246,30 @@ export class Aggregator {
     }
 
     if (need.trim() === '') {
-      for (const tool of allTools) {
+      const listedTools: Array<{
+        name: string;
+        server: string;
+        callableName: string;
+        description: string;
+      }> = [];
+
+      for (let i = 0; i < allTools.length; i += 1) {
+        const tool = allTools[i];
         const compressed = this.compressor.compress(tool);
         this.routeMap.set(compressed.name, {
           serverName: tool.serverName,
           toolName: tool.name,
           tool,
         });
+
+        if (i < 20) {
+          listedTools.push({
+            name: tool.name,
+            server: tool.serverName,
+            callableName: compressed.name,
+            description: (tool.description ?? '').slice(0, 80),
+          });
+        }
       }
 
       return {
@@ -261,12 +278,8 @@ export class Aggregator {
           text: JSON.stringify({
             found: allTools.length,
             totalAvailable: allTools.length,
-            tools: allTools.slice(0, 20).map(t => ({
-              name: t.name,
-              server: t.serverName,
-              description: (t.description ?? '').slice(0, 80),
-            })),
-            hint: 'Showing all tools. Pass a "need" parameter to filter by relevance.',
+            tools: listedTools,
+            hint: 'Showing all tools. Call by "callableName" (format: mcp_<server>_<tool>). Pass "need" to filter by relevance.',
           }),
         }],
       };
@@ -291,22 +304,21 @@ export class Aggregator {
       .filter(r => typeof r?.score === 'number' && r.score >= threshold)
       .slice(0, maxTools);
 
-    // Ensure discovered tools are in route map
-    for (const match of filtered) {
-      const compressed = this.compressor.compress(match.tool);
+    const toolNames = filtered.map((m) => {
+      const compressed = this.compressor.compress(m.tool);
       this.routeMap.set(compressed.name, {
-        serverName: match.tool.serverName,
-        toolName: match.tool.name,
-        tool: match.tool,
+        serverName: m.tool.serverName,
+        toolName: m.tool.name,
+        tool: m.tool,
       });
-    }
-
-    const toolNames = filtered.map(m => ({
-      name: m.tool.name,
-      server: m.tool.serverName,
-      relevance: `${Math.round(m.score * 100)}%`,
-      description: (m.tool.description ?? '').slice(0, 80),
-    }));
+      return {
+        name: m.tool.name,
+        server: m.tool.serverName,
+        callableName: compressed.name,
+        relevance: `${Math.round(m.score * 100)}%`,
+        description: (m.tool.description ?? '').slice(0, 80),
+      };
+    });
 
     return {
       content: [{
@@ -315,7 +327,7 @@ export class Aggregator {
           found: toolNames.length,
           tools: toolNames,
           hint: toolNames.length > 0
-            ? 'Call any tool by name.'
+            ? 'Call a returned tool by its "callableName" (format: mcp_<server>_<tool>).'
             : `No tools matched "${need}". Try rephrasing your request.`,
         }),
       }],
