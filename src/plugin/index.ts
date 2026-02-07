@@ -1,30 +1,24 @@
 import { McpLayer } from '../core/mcp-layer.js';
 import { ContextAnalyzer } from '../core/context-analyzer.js';
-import { SchemaCompressor } from '../core/schema-compressor.js';
 import { ResultCache } from '../core/result-cache.js';
 import type { BridgeConfig, ToolWithServer } from '../core/types.js';
 
-const registeredTools = new Set<string>();
+type UnknownRecord = Record<string, unknown>;
+
+type BridgeHookApi = {
+  on?: (hookName: string, handler: (...args: unknown[]) => unknown) => void;
+  onShutdown?: (handler: () => Promise<void>) => void;
+  onBeforeAgentTurn?: (handler: (context: { messages?: { role?: string; content?: unknown }[] } | undefined) => Promise<void>) => void;
+};
+
 const fallbackShutdownLayers = new Set<McpLayer>();
 let fallbackShutdownHookRegistered = false;
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
+function asRecord(value: unknown): UnknownRecord | null {
+  return typeof value === 'object' && value !== null ? value as UnknownRecord : null;
 }
 
-function hasNeedCandidate(value: unknown): boolean {
-  const record = asRecord(value);
-  if (!record) return false;
-  if (typeof record.need === 'string') return true;
-  if (typeof asRecord(record.input)?.need === 'string') return true;
-  if (typeof asRecord(record.args)?.need === 'string') return true;
-  if (typeof asRecord(record.parameters)?.need === 'string') return true;
-  if (typeof asRecord(record.toolInput)?.need === 'string') return true;
-  const argumentRecord = parseRecordJson(record.arguments);
-  return typeof argumentRecord?.need === 'string';
-}
-
-function parseRecordJson(value: unknown): Record<string, unknown> | null {
+function parseRecordJson(value: unknown): UnknownRecord | null {
   if (typeof value !== 'string') return asRecord(value);
   try {
     return asRecord(JSON.parse(value));
@@ -33,31 +27,33 @@ function parseRecordJson(value: unknown): Record<string, unknown> | null {
   }
 }
 
-function extractNeed(params: unknown): string {
-  if (typeof params === 'string') return params;
+function getCandidateRecords(params: unknown): UnknownRecord[] {
+  const root = parseRecordJson(params) ?? asRecord(params);
+  if (!root) return [];
 
-  const root = asRecord(params);
-  const input = asRecord(root?.input);
-  const args = asRecord(root?.args);
-  const parameters = asRecord(root?.parameters);
-  const toolInput = asRecord(root?.toolInput);
-  const parsedArguments = parseRecordJson(root?.arguments);
+  const records: UnknownRecord[] = [root];
+  const nestedKeys = ['input', 'args', 'parameters', 'toolInput', 'payload'];
 
-  const candidate = root?.need
-    ?? input?.need
-    ?? parsedArguments?.need
-    ?? args?.need
-    ?? parameters?.need
-    ?? toolInput?.need;
+  for (const key of nestedKeys) {
+    const nested = parseRecordJson(root[key]) ?? asRecord(root[key]);
+    if (nested) records.push(nested);
+  }
 
-  return typeof candidate === 'string' ? candidate : '';
+  const parsedArguments = parseRecordJson(root.arguments);
+  if (parsedArguments) records.push(parsedArguments);
+
+  return records;
+}
+
+function hasNeedCandidate(value: unknown): boolean {
+  const records = getCandidateRecords(value);
+  return records.some(record => typeof record.need === 'string');
 }
 
 function extractExecuteParams(incoming: unknown[]): unknown {
   if (!Array.isArray(incoming) || incoming.length === 0) return undefined;
   if (incoming.length === 1) return incoming[0];
 
-  // Some runtimes pass (toolCallId, params, context)
   const candidate = incoming.find(hasNeedCandidate);
   if (candidate !== undefined) return candidate;
 
@@ -65,65 +61,206 @@ function extractExecuteParams(incoming: unknown[]): unknown {
   return incoming[0];
 }
 
+function extractNeed(params: unknown): string {
+  if (typeof params === 'string') {
+    const parsed = parseRecordJson(params);
+    if (!parsed) return params;
+  }
+
+  const records = getCandidateRecords(params);
+  for (const record of records) {
+    if (typeof record.need === 'string') return record.need;
+  }
+
+  return '';
+}
+
+function pickFirstString(records: UnknownRecord[], keys: string[]): string {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim() !== '') return value;
+    }
+  }
+  return '';
+}
+
+function extractInlineArgs(record: UnknownRecord): Record<string, unknown> {
+  const reserved = new Set([
+    'server',
+    'serverName',
+    'tool',
+    'toolName',
+    'name',
+    'input',
+    'args',
+    'parameters',
+    'toolInput',
+    'arguments',
+    'params',
+    'toolArgs',
+    'payload',
+  ]);
+
+  const inline = Object.entries(record)
+    .filter(([key]) => !reserved.has(key))
+    .reduce<Record<string, unknown>>((acc, [key, value]) => {
+      acc[key] = value;
+      return acc;
+    }, {});
+
+  return inline;
+}
+
+function extractToolCall(params: unknown): {
+  serverName: string;
+  toolName: string;
+  toolParams: Record<string, unknown>;
+} {
+  const records = getCandidateRecords(params);
+  if (records.length === 0) {
+    return { serverName: '', toolName: '', toolParams: {} };
+  }
+
+  const callRecords = records.filter((record) => (
+    typeof record.server === 'string'
+    || typeof record.serverName === 'string'
+    || typeof record.tool === 'string'
+    || typeof record.toolName === 'string'
+  ));
+  const callRecord = callRecords[0] ?? records[0];
+
+  const serverName = pickFirstString([callRecord, ...callRecords], ['server', 'serverName']);
+  const toolName = pickFirstString([callRecord, ...callRecords], ['tool', 'toolName']);
+
+  const explicitArgs =
+    parseRecordJson(callRecord.arguments)
+    ?? asRecord(callRecord.arguments)
+    ?? parseRecordJson(callRecord.params)
+    ?? asRecord(callRecord.params)
+    ?? parseRecordJson(callRecord.toolArgs)
+    ?? asRecord(callRecord.toolArgs)
+    ?? parseRecordJson(callRecord.args)
+    ?? asRecord(callRecord.args)
+    ?? parseRecordJson(callRecord.input)
+    ?? asRecord(callRecord.input)
+    ?? parseRecordJson(callRecord.parameters)
+    ?? asRecord(callRecord.parameters)
+    ?? parseRecordJson(callRecord.toolInput)
+    ?? asRecord(callRecord.toolInput)
+    ?? parseRecordJson(callRecord.payload)
+    ?? asRecord(callRecord.payload);
+
+  const toolParams = explicitArgs ?? extractInlineArgs(callRecord);
+
+  return {
+    serverName,
+    toolName,
+    toolParams: asRecord(toolParams) ?? {},
+  };
+}
+
+function resolvePluginConfig(api: unknown): UnknownRecord {
+  const root = asRecord(api);
+  const pluginConfig = asRecord(root?.pluginConfig);
+  if (pluginConfig) return pluginConfig;
+
+  const legacy = asRecord(root?.config);
+  if (!legacy) return {};
+
+  if (
+    'servers' in legacy
+    || 'autoDiscover' in legacy
+    || 'analyzer' in legacy
+    || 'cache' in legacy
+  ) {
+    return legacy;
+  }
+
+  return {};
+}
+
+function toMessageList(messages: unknown): Array<{ role?: string; content?: unknown }> {
+  if (!Array.isArray(messages)) return [];
+  return messages.map((entry) => {
+    const record = asRecord(entry);
+    return {
+      role: typeof record?.role === 'string' ? record.role : undefined,
+      content: record?.content,
+    };
+  });
+}
+
+function summarizeTool(tool: ToolWithServer, score?: number): Record<string, unknown> {
+  const schema = asRecord(tool.inputSchema);
+  const properties = asRecord(schema?.properties);
+  const parameterNames = properties ? Object.keys(properties).slice(0, 8) : [];
+  const required = Array.isArray(schema?.required)
+    ? schema.required.filter((entry): entry is string => typeof entry === 'string').slice(0, 8)
+    : [];
+
+  const summary: Record<string, unknown> = {
+    name: tool.name,
+    server: tool.serverName,
+    description: (tool.description ?? '').slice(0, 120),
+  };
+
+  if (typeof score === 'number') {
+    summary.relevance = `${Math.round(score * 100)}%`;
+  }
+  if (parameterNames.length > 0) {
+    summary.parameters = parameterNames;
+  }
+  if (required.length > 0) {
+    summary.required = required;
+  }
+
+  return summary;
+}
+
+function registerShutdownFallback(layer: McpLayer): void {
+  fallbackShutdownLayers.add(layer);
+  if (fallbackShutdownHookRegistered) return;
+
+  fallbackShutdownHookRegistered = true;
+  process.once('beforeExit', () => {
+    for (const pendingLayer of fallbackShutdownLayers) {
+      void pendingLayer.shutdown().catch(() => {
+        // Best-effort fallback when plugin API does not expose lifecycle hooks.
+      });
+    }
+    fallbackShutdownLayers.clear();
+  });
+}
+
 export default function mcpBridge(api: any): void {
-  const pluginConfig = api?.config ?? {};
+  const pluginConfig = resolvePluginConfig(api);
+  const analyzerConfig = asRecord(pluginConfig.analyzer);
+  const cacheConfig = asRecord(pluginConfig.cache);
+
   const config: BridgeConfig = {
-    servers: Array.isArray(pluginConfig.servers) ? pluginConfig.servers : [],
-    autoDiscover: pluginConfig.autoDiscover ?? true,
+    servers: Array.isArray(pluginConfig.servers) ? pluginConfig.servers as BridgeConfig['servers'] : [],
+    autoDiscover: typeof pluginConfig.autoDiscover === 'boolean' ? pluginConfig.autoDiscover : true,
     analyzer: {
-      maxToolsPerTurn: pluginConfig.analyzer?.maxToolsPerTurn ?? 5,
-      relevanceThreshold: pluginConfig.analyzer?.relevanceThreshold ?? 0.3,
-      highConfidenceThreshold: pluginConfig.analyzer?.highConfidenceThreshold ?? 0.7,
-      recentToolBoost: pluginConfig.analyzer?.recentToolBoost ?? 0.15,
+      maxToolsPerTurn: typeof analyzerConfig?.maxToolsPerTurn === 'number' ? analyzerConfig.maxToolsPerTurn : 5,
+      relevanceThreshold: typeof analyzerConfig?.relevanceThreshold === 'number' ? analyzerConfig.relevanceThreshold : 0.3,
+      highConfidenceThreshold: typeof analyzerConfig?.highConfidenceThreshold === 'number' ? analyzerConfig.highConfidenceThreshold : 0.7,
+      recentToolBoost: typeof analyzerConfig?.recentToolBoost === 'number' ? analyzerConfig.recentToolBoost : 0.15,
     },
     cache: {
-      enabled: pluginConfig.cache?.enabled ?? true,
-      ttlMs: pluginConfig.cache?.ttlMs ?? 30000,
-      maxEntries: pluginConfig.cache?.maxEntries ?? 100,
+      enabled: typeof cacheConfig?.enabled === 'boolean' ? cacheConfig.enabled : true,
+      ttlMs: typeof cacheConfig?.ttlMs === 'number' ? cacheConfig.ttlMs : 30000,
+      maxEntries: typeof cacheConfig?.maxEntries === 'number' ? cacheConfig.maxEntries : 100,
     },
   };
 
   const mcpLayer = new McpLayer(config);
   const analyzer = new ContextAnalyzer();
-  const compressor = new SchemaCompressor();
   const cache = new ResultCache(config.cache);
 
-  function registerCompressedTool(compressed: ReturnType<SchemaCompressor['compress']>): void {
-    if (registeredTools.has(compressed.name)) return;
-    const desc = compressed.optionalHint
-      ? `${compressed.shortDescription}. ${compressed.optionalHint}`
-      : compressed.shortDescription;
-
-    api.registerTool({
-      name: compressed.name,
-      description: desc,
-      parameters: compressed.parameters,
-      execute: async (...incoming: unknown[]) => {
-        const params = parseRecordJson(extractExecuteParams(incoming)) ?? {};
-        const mapping = compressor.decompress(compressed.name, params ?? {});
-        if (!mapping) return { error: `Unknown tool: ${compressed.name}` };
-        try {
-          const cached = cache.get(mapping.serverName, mapping.toolName, mapping.fullParams);
-          if (cached) return cached;
-          const result = await mcpLayer.callTool(mapping.serverName, mapping.toolName, mapping.fullParams);
-          analyzer.recordUsage(mapping.toolName, mapping.serverName);
-          if (cache.isCacheable(mapping.toolName)) {
-            cache.set(mapping.serverName, mapping.toolName, mapping.fullParams, result);
-          }
-          return result;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return { error: `Tool call failed: ${msg}` };
-        }
-      },
-    });
-    registeredTools.add(compressed.name);
-  }
-
-  // --- mcp_find_tools ---
   api.registerTool({
     name: 'mcp_find_tools',
-    description: 'Search for available tools from external MCP servers. Call this to discover what tools you can use for a task. Pass a description of what you need, or leave empty to list all tools. After finding tools, you can call them directly by name.',
+    description: 'Search for available tools from external MCP servers. Pass what you need in "need", or leave it empty to list all tools. Then call mcp_call_tool with the returned server and tool names.',
     parameters: {
       type: 'object',
       properties: {
@@ -138,7 +275,7 @@ export default function mcpBridge(api: any): void {
       const params = extractExecuteParams(incoming);
       const need = extractNeed(params);
 
-      let allTools;
+      let allTools: ToolWithServer[] = [];
       try {
         allTools = await mcpLayer.discoverTools();
       } catch (err) {
@@ -156,33 +293,24 @@ export default function mcpBridge(api: any): void {
       }
 
       if (need.trim() === '') {
-        const allCompressed = allTools.map((tool) => {
-          registerCompressedTool(compressor.compress(tool));
-          return {
-            name: tool.name,
-            server: tool.serverName,
-            description: (tool.description ?? '').slice(0, 80),
-          };
-        });
-
         return {
-          found: allCompressed.length,
-          tools: allCompressed.slice(0, 20),
-          totalAvailable: allCompressed.length,
-          hint: 'Showing all tools. Pass a "need" parameter to filter by relevance.',
+          found: allTools.length,
+          tools: allTools.slice(0, 20).map(tool => summarizeTool(tool)),
+          totalAvailable: allTools.length,
+          hint: 'Call mcp_call_tool with { server, tool, arguments }.',
         };
       }
 
-      let ranked: Array<{ tool: typeof allTools[number]; score: number; matchType: string }>;
+      let ranked: Array<{ tool: ToolWithServer; score: number; matchType: string }>;
       try {
         ranked = analyzer.rank(
           [{ role: 'user', content: need }],
           allTools,
-          config.analyzer
+          config.analyzer,
         ) ?? [];
       } catch (err) {
         console.error('[mcp-bridge] ranking failed:', err);
-        ranked = allTools.map(t => ({ tool: t, score: 0.5, matchType: 'keyword' }));
+        ranked = allTools.map(tool => ({ tool, score: 0.5, matchType: 'keyword' }));
       }
 
       if (!Array.isArray(ranked)) ranked = [];
@@ -193,29 +321,70 @@ export default function mcpBridge(api: any): void {
         .filter(match => typeof match?.score === 'number' && match.score >= threshold)
         .slice(0, maxTools);
 
-      const registered = [];
-      for (const match of filtered) {
-        const compressed = compressor.compress(match.tool);
-        registerCompressedTool(compressed);
-        registered.push({
-          name: match.tool.name,
-          server: match.tool.serverName,
-          relevance: `${Math.round(match.score * 100)}%`,
-          description: (match.tool.description ?? '').slice(0, 80),
-        });
-      }
+      const tools = filtered.map((match) => summarizeTool(match.tool, match.score));
 
       return {
-        found: registered.length,
-        tools: registered,
-        hint: registered.length > 0
-          ? 'Call any tool by name.'
+        found: tools.length,
+        tools,
+        hint: tools.length > 0
+          ? 'Call mcp_call_tool with { server, tool, arguments }.'
           : `No tools matched "${need}". Try a broader description.`,
       };
     },
   });
 
-  // --- mcp_list_servers ---
+  api.registerTool({
+    name: 'mcp_call_tool',
+    description: 'Call a downstream MCP tool discovered via mcp_find_tools. Provide the server name, tool name, and arguments object.',
+    parameters: {
+      type: 'object',
+      properties: {
+        server: {
+          type: 'string',
+          description: 'Server name returned by mcp_find_tools.',
+        },
+        tool: {
+          type: 'string',
+          description: 'Tool name returned by mcp_find_tools.',
+        },
+        arguments: {
+          type: 'object',
+          description: 'Arguments to pass to the downstream tool.',
+          additionalProperties: true,
+        },
+      },
+      required: ['server', 'tool'],
+    },
+    execute: async (...incoming: unknown[]) => {
+      const params = extractExecuteParams(incoming);
+      const { serverName, toolName, toolParams } = extractToolCall(params);
+
+      if (!serverName || !toolName) {
+        return {
+          error: 'Missing required fields. Expected { server, tool, arguments }.',
+          received: asRecord(params) ?? params,
+        };
+      }
+
+      try {
+        const cached = cache.get(serverName, toolName, toolParams);
+        if (cached !== null) return cached;
+
+        const result = await mcpLayer.callTool(serverName, toolName, toolParams);
+        analyzer.recordUsage(toolName, serverName);
+
+        if (cache.isCacheable(toolName)) {
+          cache.set(serverName, toolName, toolParams, result);
+        }
+
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { error: `Tool call failed: ${msg}` };
+      }
+    },
+  });
+
   api.registerTool({
     name: 'mcp_list_servers',
     description: 'List all connected MCP servers and how many tools each provides. Use this to check what external tool servers are available.',
@@ -258,46 +427,52 @@ export default function mcpBridge(api: any): void {
     },
   });
 
-  // Auto-injection: pre-load high-confidence tools before each agent turn
-  api.onBeforeAgentTurn?.(async (context: { messages?: { role: string; content: string }[] }) => {
-    try {
-      const messages = Array.isArray(context?.messages) ? context.messages : [];
-      if (messages.length === 0) return;
-      const allTools = await mcpLayer.discoverTools();
-      if (!Array.isArray(allTools) || allTools.length === 0) return;
-      const threshold = config.analyzer?.highConfidenceThreshold ?? 0.7;
-      const ranked = analyzer.rank(messages, allTools, {
-        ...config.analyzer, relevanceThreshold: threshold, maxToolsPerTurn: 3,
-      });
-      if (Array.isArray(ranked)) {
-        for (const match of ranked) registerCompressedTool(compressor.compress(match.tool));
-      }
-    } catch {
-      // Auto-injection is best-effort
-    }
-  });
+  const hookApi = api as BridgeHookApi;
 
-  if (typeof api.onShutdown === 'function') {
-    api.onShutdown(async () => {
+  if (typeof hookApi.on === 'function') {
+    hookApi.on('before_agent_start', async (event: unknown) => {
+      try {
+        const eventRecord = asRecord(event);
+        const messages = toMessageList(eventRecord?.messages);
+        if (messages.length === 0) return;
+        await mcpLayer.discoverTools();
+      } catch {
+        // Warm-up is best-effort.
+      }
+    });
+
+    hookApi.on('gateway_stop', async () => {
       try {
         await mcpLayer.shutdown();
       } catch (err) {
         console.error('[mcp-bridge] shutdown error (non-fatal):', err);
       }
     });
-  } else {
-    console.log('[mcp-bridge] api.onShutdown not available, using process.beforeExit fallback');
-    fallbackShutdownLayers.add(mcpLayer);
-    if (!fallbackShutdownHookRegistered) {
-      fallbackShutdownHookRegistered = true;
-      process.once('beforeExit', () => {
-        for (const layer of fallbackShutdownLayers) {
-          void layer.shutdown().catch(() => {
-            // Best-effort fallback when plugin API does not expose onShutdown.
-          });
-        }
-        fallbackShutdownLayers.clear();
-      });
-    }
+    return;
   }
+
+  if (typeof hookApi.onBeforeAgentTurn === 'function') {
+    hookApi.onBeforeAgentTurn(async (context) => {
+      try {
+        const messages = toMessageList(context?.messages);
+        if (messages.length === 0) return;
+        await mcpLayer.discoverTools();
+      } catch {
+        // Warm-up is best-effort.
+      }
+    });
+  }
+
+  if (typeof hookApi.onShutdown === 'function') {
+    hookApi.onShutdown(async () => {
+      try {
+        await mcpLayer.shutdown();
+      } catch (err) {
+        console.error('[mcp-bridge] shutdown error (non-fatal):', err);
+      }
+    });
+    return;
+  }
+
+  registerShutdownFallback(mcpLayer);
 }

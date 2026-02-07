@@ -25,6 +25,23 @@
         "type": "boolean",
         "default": true,
         "description": "Auto-discover MCP servers from ~/.mcp.json"
+      },
+      "analyzer": {
+        "type": "object",
+        "properties": {
+          "maxToolsPerTurn": { "type": "number", "default": 5 },
+          "relevanceThreshold": { "type": "number", "default": 0.3 },
+          "highConfidenceThreshold": { "type": "number", "default": 0.7 },
+          "recentToolBoost": { "type": "number", "default": 0.15 }
+        }
+      },
+      "cache": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "ttlMs": { "type": "number", "default": 30000 },
+          "maxEntries": { "type": "number", "default": 100 }
+        }
       }
     }
   }

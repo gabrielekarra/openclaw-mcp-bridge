@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-openclaw-mcp-bridge is an **MCP aggregator server** that connects multiple downstream MCP servers and exposes them as one unified server via the standard MCP protocol. It also works as an OpenClaw plugin for deeper integration. Uses **mcp-use** for downstream connections and **@modelcontextprotocol/sdk** for the server side. Includes a context-aware intelligence layer (filtering, compression, caching) to reduce the "token tax."
+openclaw-mcp-bridge is an **MCP aggregator server** that connects multiple downstream MCP servers and exposes them as one unified server via the standard MCP protocol. It also works as an OpenClaw plugin for deeper integration. Uses **mcp-use** for downstream connections and **@modelcontextprotocol/sdk** for the server side. Includes a context-aware intelligence layer (filtering + caching) to reduce tool selection noise.
 
 **Key design decision**: We use `MCPClient` from mcp-use for connections and tool discovery, but NOT `MCPAgent` (which brings its own LLM loop via LangChain). For the server side, we use `Server` from `@modelcontextprotocol/sdk` directly (not mcp-use's HTTP-only `MCPServer`).
 
@@ -37,7 +37,7 @@ src/
 │   ├── index.ts              — Standalone MCP server (stdio via @modelcontextprotocol/sdk)
 │   └── cli.ts                — CLI arg parsing (--config, --http, --port) + config loading
 ├── plugin/
-│   └── index.ts              — OpenClaw plugin entry (mcp_find_tools, onBeforeAgentTurn, etc.)
+│   └── index.ts              — OpenClaw plugin entry (`mcp_find_tools`, `mcp_call_tool`, `mcp_list_servers`)
 └── index.ts                  — Package root (re-exports plugin default + core)
 ```
 
@@ -54,9 +54,9 @@ Two modes:
 1. **Auto-discover** (default): reads `~/.mcp.json` for server configs
 2. **Explicit**: servers defined in config with transport, command/url, env, headers, and category hints
 
-Config schema is in `package.json` under `configSchema`. See `examples/` for sample configs.
+Plugin config schema is in `openclaw.plugin.json`. See `examples/` for sample configs.
 
 ## Deployment Modes
 
 1. **Standalone MCP server**: `npx openclaw-mcp-bridge --config ./config.json` — any MCP client connects via stdio
-2. **OpenClaw plugin**: deeper integration with `mcp_find_tools`, `mcp_list_servers`, `onBeforeAgentTurn` auto-injection
+2. **OpenClaw plugin**: deeper integration with `mcp_find_tools`, `mcp_call_tool`, `mcp_list_servers`

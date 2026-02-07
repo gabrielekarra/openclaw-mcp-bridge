@@ -2,7 +2,7 @@
 
 Smart MCP bridge for OpenClaw and other MCP clients.
 
-This project connects multiple MCP servers and exposes them through one interface, with relevance filtering, schema compression, and optional caching.
+This project connects multiple MCP servers and exposes them through one interface, with relevance filtering and optional caching.
 
 Built on [mcp-use](https://github.com/mcp-use/mcp-use) and [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk).
 
@@ -105,6 +105,30 @@ Examples:
 Behavior:
 - If `need` is present, tools are ranked by relevance.
 - If `need` is empty/missing, it returns available tools (capped for readability).
+- Results include `server` + `name` values used by `mcp_call_tool`.
+
+### `mcp_call_tool`
+
+Calls a downstream tool returned by `mcp_find_tools`.
+
+Required params:
+- `server` (string)
+- `tool` (string)
+
+Optional params:
+- `arguments` (object)
+
+Example call payload:
+
+```json
+{
+  "server": "notion",
+  "tool": "create_page",
+  "arguments": {
+    "title": "Roadmap"
+  }
+}
+```
 
 ### `mcp_list_servers`
 
@@ -119,7 +143,7 @@ Examples:
 1. User asks for a task that likely needs an external tool.
 2. Agent calls `mcp_find_tools`.
 3. Bridge discovers tools across MCP servers and ranks matches.
-4. Agent calls the selected tool by name.
+4. Agent calls `mcp_call_tool` with the selected `server` + `tool`.
 5. Bridge routes the call to the correct MCP server.
 
 ## Configuration
@@ -183,7 +207,6 @@ See `examples/` for ready-to-use configs.
 | `autoDiscover` | boolean | `true` | Load servers from `~/.mcp.json` |
 | `analyzer.maxToolsPerTurn` | number | `5` | Maximum ranked tools returned |
 | `analyzer.relevanceThreshold` | number | `0.3` | Minimum relevance score (0-1) |
-| `analyzer.highConfidenceThreshold` | number | `0.7` | Auto-injection threshold |
 | `cache.enabled` | boolean | `true` | Enable result cache |
 | `cache.ttlMs` | number | `30000` | Cache TTL in ms |
 | `cache.maxEntries` | number | `100` | Max cache entries |
@@ -204,6 +227,7 @@ pnpm lint
 | `plugin not found: mcp-bridge` | Plugin not installed locally | Run `openclaw plugins install .` from repo root |
 | No MCP servers detected | Missing `~/.mcp.json` and no explicit `servers` | Add `~/.mcp.json` or set `servers` in plugin config |
 | Tools not matching user intent | Query too narrow / threshold too high | Broaden `need` text or lower `analyzer.relevanceThreshold` |
+| Tool was found but not executed | Agent tried to call tool directly | Call `mcp_call_tool` with `{ server, tool, arguments }` |
 | Standalone server not starting | Wrong Node version | Use Node `20.19+` |
 
 ## License

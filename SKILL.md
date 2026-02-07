@@ -5,18 +5,20 @@ You have access to external tools via MCP (Model Context Protocol) servers.
 ## Available meta-tools
 
 - `mcp_find_tools` — Find tools for a specific task. Pass `{ need: "what you need" }`.
+- `mcp_call_tool` — Execute a discovered tool. Pass `{ server, tool, arguments }`.
 - `mcp_list_servers` — List connected MCP servers and their tool counts.
 
 ## How to use
 
 1. When you need external capabilities, call `mcp_find_tools` with a description
 2. Review the returned tools and their descriptions
-3. Call the tool you need directly by its name with the required parameters
+3. Call `mcp_call_tool` with the selected `server` and `tool`
 4. The MCP bridge routes your call to the correct server automatically
 
 ## Examples
 
 "I need to create a GitHub issue" → call `mcp_find_tools({ need: "create github issue" })`
+"Use the Notion create_page tool" → call `mcp_call_tool({ server: "notion", tool: "create_page", arguments: { ... } })`
 "What servers are available?" → call `mcp_list_servers({})`
 "List all tools" → call `mcp_find_tools({ need: "" })`
 
