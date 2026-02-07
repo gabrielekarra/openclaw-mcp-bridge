@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ResultCache } from '../src/result-cache.js';
+import { ResultCache } from '../src/core/result-cache.js';
 
 describe('ResultCache', () => {
   let cache: ResultCache;

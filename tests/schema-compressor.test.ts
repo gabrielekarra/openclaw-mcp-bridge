@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SchemaCompressor } from '../src/schema-compressor.js';
-import type { ToolWithServer } from '../src/types.js';
+import { SchemaCompressor } from '../src/core/schema-compressor.js';
+import type { ToolWithServer } from '../src/core/types.js';
 
 const toolWithLongDesc: ToolWithServer = {
   name: 'createDatabaseEntry',

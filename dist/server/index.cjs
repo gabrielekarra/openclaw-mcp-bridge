@@ -1,35 +1,10 @@
+#!/usr/bin/env node
 "use strict";
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/index.ts
-var index_exports = {};
-__export(index_exports, {
-  Aggregator: () => Aggregator,
-  CachedToolSet: () => CachedToolSet,
-  ContextAnalyzer: () => ContextAnalyzer,
-  McpLayer: () => McpLayer,
-  ResultCache: () => ResultCache,
-  SchemaCompressor: () => SchemaCompressor,
-  default: () => mcpBridge,
-  discoverFromMcpJson: () => discoverFromMcpJson
-});
-module.exports = __toCommonJS(index_exports);
+// src/server/index.ts
+var import_server = require("@modelcontextprotocol/sdk/server/index.js");
+var import_stdio = require("@modelcontextprotocol/sdk/server/stdio.js");
+var import_types2 = require("@modelcontextprotocol/sdk/types.js");
 
 // src/core/mcp-layer.ts
 var import_mcp_use = require("mcp-use");
@@ -46,17 +21,17 @@ function discoverFromMcpJson(path) {
   } catch {
     return [];
   }
-  let config;
+  let config2;
   try {
-    config = JSON.parse(raw);
+    config2 = JSON.parse(raw);
   } catch {
     return [];
   }
-  if (!config.mcpServers || typeof config.mcpServers !== "object") {
+  if (!config2.mcpServers || typeof config2.mcpServers !== "object") {
     return [];
   }
   const servers = [];
-  for (const [name, entry] of Object.entries(config.mcpServers)) {
+  for (const [name, entry] of Object.entries(config2.mcpServers)) {
     if (!entry || typeof entry !== "object") continue;
     if (entry.command) {
       servers.push({
@@ -95,10 +70,10 @@ var CachedToolSet = class _CachedToolSet {
 
 // src/core/mcp-layer.ts
 var McpLayer = class {
-  constructor(config) {
-    this.config = config;
-    const explicit = config.servers ?? [];
-    const discovered = config.autoDiscover !== false ? discoverFromMcpJson() : [];
+  constructor(config2) {
+    this.config = config2;
+    const explicit = config2.servers ?? [];
+    const discovered = config2.autoDiscover !== false ? discoverFromMcpJson() : [];
     const byName = /* @__PURE__ */ new Map();
     for (const s of discovered) byName.set(s.name, s);
     for (const s of explicit) byName.set(s.name, s);
@@ -111,17 +86,17 @@ var McpLayer = class {
   getClient() {
     if (this.client) return this.client;
     const mcpServers = {};
-    for (const server of this.serverEntries) {
-      if (server.transport === "stdio" && server.command) {
-        mcpServers[server.name] = {
-          command: server.command,
-          args: server.args ?? [],
-          env: server.env
+    for (const server2 of this.serverEntries) {
+      if (server2.transport === "stdio" && server2.command) {
+        mcpServers[server2.name] = {
+          command: server2.command,
+          args: server2.args ?? [],
+          env: server2.env
         };
-      } else if (server.url) {
-        mcpServers[server.name] = {
-          url: server.url,
-          headers: server.headers
+      } else if (server2.url) {
+        mcpServers[server2.name] = {
+          url: server2.url,
+          headers: server2.headers
         };
       }
     }
@@ -219,9 +194,9 @@ function extractWords(text) {
 }
 var ContextAnalyzer = class {
   recentlyUsed = /* @__PURE__ */ new Map();
-  rank(messages, allTools, config) {
-    const maxTools = config?.maxToolsPerTurn ?? 5;
-    const threshold = config?.relevanceThreshold ?? 0.3;
+  rank(messages, allTools, config2) {
+    const maxTools = config2?.maxToolsPerTurn ?? 5;
+    const threshold = config2?.relevanceThreshold ?? 0.3;
     const userMsgs = messages.filter((m) => m.role === "user").slice(-3);
     if (userMsgs.length === 0) return [];
     const messageText = userMsgs.map((m) => m.content).join(" ");
@@ -368,10 +343,10 @@ var ResultCache = class {
   defaultTtl;
   maxEntries;
   enabled;
-  constructor(config) {
-    this.enabled = config?.enabled ?? true;
-    this.defaultTtl = config?.ttlMs ?? 3e4;
-    this.maxEntries = config?.maxEntries ?? 100;
+  constructor(config2) {
+    this.enabled = config2?.enabled ?? true;
+    this.defaultTtl = config2?.ttlMs ?? 3e4;
+    this.maxEntries = config2?.maxEntries ?? 100;
   }
   /** Check if a tool's results are safe to cache */
   isCacheable(toolName) {
@@ -380,9 +355,9 @@ var ResultCache = class {
     return CACHEABLE_PATTERNS.test(toolName);
   }
   /** Get cached result, or null if miss/expired */
-  get(server, tool, params) {
+  get(server2, tool, params) {
     if (!this.enabled) return null;
-    const key = this.makeKey(server, tool, params);
+    const key = this.makeKey(server2, tool, params);
     const entry = this.cache.get(key);
     if (!entry) return null;
     if (Date.now() - entry.timestamp > entry.ttlMs) {
@@ -392,9 +367,9 @@ var ResultCache = class {
     return entry.result;
   }
   /** Store a result in cache */
-  set(server, tool, params, result, ttlMs) {
+  set(server2, tool, params, result, ttlMs) {
     if (!this.enabled) return;
-    const key = this.makeKey(server, tool, params);
+    const key = this.makeKey(server2, tool, params);
     if (this.cache.size >= this.maxEntries && !this.cache.has(key)) {
       this.evictOldest();
     }
@@ -418,9 +393,9 @@ var ResultCache = class {
   get size() {
     return this.cache.size;
   }
-  makeKey(server, tool, params) {
+  makeKey(server2, tool, params) {
     const sortedParams = JSON.stringify(params, Object.keys(params ?? {}).sort());
-    return JSON.stringify([server, tool, sortedParams]);
+    return JSON.stringify([server2, tool, sortedParams]);
   }
   evictOldest() {
     let oldestKey = null;
@@ -435,102 +410,14 @@ var ResultCache = class {
   }
 };
 
-// src/plugin/index.ts
-var registeredTools = /* @__PURE__ */ new Set();
-function mcpBridge(api) {
-  const config = api.config ?? {};
-  const mcpLayer = new McpLayer(config);
-  const analyzer = new ContextAnalyzer();
-  const compressor = new SchemaCompressor();
-  const cache = new ResultCache(config.cache);
-  function registerCompressedTool(compressed) {
-    if (registeredTools.has(compressed.name)) return;
-    const desc = compressed.optionalHint ? `${compressed.shortDescription}. ${compressed.optionalHint}` : compressed.shortDescription;
-    api.registerTool({
-      name: compressed.name,
-      description: desc,
-      parameters: compressed.parameters,
-      execute: async (params) => {
-        const mapping = compressor.decompress(compressed.name, params);
-        if (!mapping) return { error: `Unknown tool: ${compressed.name}` };
-        try {
-          const cached = cache.get(mapping.serverName, mapping.toolName, mapping.fullParams);
-          if (cached) return cached;
-          const result = await mcpLayer.callTool(mapping.serverName, mapping.toolName, mapping.fullParams);
-          analyzer.recordUsage(mapping.toolName, mapping.serverName);
-          if (cache.isCacheable(mapping.toolName)) {
-            cache.set(mapping.serverName, mapping.toolName, mapping.fullParams, result);
-          }
-          return result;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return { error: `Tool call failed: ${msg}` };
-        }
-      }
-    });
-    registeredTools.add(compressed.name);
-  }
-  api.registerTool({
-    name: "mcp_find_tools",
-    description: "Find tools from connected MCP services (Notion, GitHub, Stripe, etc). Use when you need a capability not in your current tools.",
-    parameters: {
-      type: "object",
-      properties: {
-        need: { type: "string", description: 'What you need to do, e.g. "create a notion page"' }
-      },
-      required: ["need"]
-    },
-    execute: async (params) => {
-      try {
-        const allTools = await mcpLayer.discoverTools();
-        if (allTools.length === 0) {
-          return { found: 0, tools: [], message: "No MCP servers configured or no tools available." };
-        }
-        const ranked = analyzer.rank([{ role: "user", content: params.need }], allTools, config.analyzer);
-        const registered = [];
-        for (const match of ranked) {
-          const compressed = compressor.compress(match.tool);
-          registerCompressedTool(compressed);
-          registered.push(`${match.tool.serverName}/${match.tool.name} (${Math.round(match.score * 100)}%)`);
-        }
-        return {
-          found: ranked.length,
-          tools: registered,
-          message: ranked.length > 0 ? `Found ${ranked.length} relevant tool(s). They are now available for use.` : `No tools matched "${params.need}". Try rephrasing your request.`
-        };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { error: `Tool discovery failed: ${msg}` };
-      }
-    }
-  });
-  api.onBeforeAgentTurn?.(async (context) => {
-    try {
-      const allTools = await mcpLayer.discoverTools();
-      if (allTools.length === 0) return;
-      const threshold = config.analyzer?.highConfidenceThreshold ?? 0.7;
-      const ranked = analyzer.rank(context.messages, allTools, {
-        ...config.analyzer,
-        relevanceThreshold: threshold,
-        maxToolsPerTurn: 3
-      });
-      for (const match of ranked) registerCompressedTool(compressor.compress(match.tool));
-    } catch {
-    }
-  });
-  api.onShutdown(async () => {
-    await mcpLayer.shutdown();
-  });
-}
-
 // src/core/aggregator.ts
 var Aggregator = class {
-  constructor(config) {
-    this.config = config;
-    this.mcpLayer = new McpLayer(config);
+  constructor(config2) {
+    this.config = config2;
+    this.mcpLayer = new McpLayer(config2);
     this.analyzer = new ContextAnalyzer();
     this.compressor = new SchemaCompressor();
-    this.cache = new ResultCache(config.cache);
+    this.cache = new ResultCache(config2.cache);
   }
   mcpLayer;
   analyzer;
@@ -634,13 +521,72 @@ var Aggregator = class {
     };
   }
 };
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  Aggregator,
-  CachedToolSet,
-  ContextAnalyzer,
-  McpLayer,
-  ResultCache,
-  SchemaCompressor,
-  discoverFromMcpJson
+
+// src/server/cli.ts
+var import_node_fs2 = require("fs");
+function parseArgs(argv) {
+  const result = { configPath: null, http: false, port: 3e3 };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--config" && i + 1 < argv.length) {
+      result.configPath = argv[++i];
+    } else if (arg === "--http") {
+      result.http = true;
+    } else if (arg === "--port" && i + 1 < argv.length) {
+      result.port = parseInt(argv[++i], 10);
+    }
+  }
+  return result;
+}
+function loadConfig(args2) {
+  if (!args2.configPath) return {};
+  try {
+    const raw = (0, import_node_fs2.readFileSync)(args2.configPath, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+// src/server/index.ts
+var args = parseArgs(process.argv.slice(2));
+var config = loadConfig(args);
+var aggregator = new Aggregator(config);
+var server = new import_server.Server(
+  { name: "openclaw-mcp-bridge", version: "0.2.0" },
+  { capabilities: { tools: {} } }
+);
+server.setRequestHandler(import_types2.ListToolsRequestSchema, async () => {
+  await aggregator.refreshTools();
+  return { tools: aggregator.getToolList() };
+});
+server.setRequestHandler(import_types2.CallToolRequestSchema, async (request) => {
+  const { name, arguments: params } = request.params;
+  try {
+    return await aggregator.callTool(name, params ?? {});
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      content: [{ type: "text", text: `Error: ${msg}` }],
+      isError: true
+    };
+  }
+});
+async function main() {
+  const transport = new import_stdio.StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write("[openclaw-mcp-bridge] MCP aggregator server started (stdio)\n");
+}
+async function shutdown() {
+  process.stderr.write("[openclaw-mcp-bridge] Shutting down...\n");
+  await aggregator.shutdown();
+  await server.close();
+  process.exit(0);
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+main().catch((err) => {
+  process.stderr.write(`[openclaw-mcp-bridge] Fatal: ${err}
+`);
+  process.exit(1);
 });

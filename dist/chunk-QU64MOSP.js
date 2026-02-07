@@ -1,48 +1,12 @@
-"use strict";
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// src/index.ts
-var index_exports = {};
-__export(index_exports, {
-  Aggregator: () => Aggregator,
-  CachedToolSet: () => CachedToolSet,
-  ContextAnalyzer: () => ContextAnalyzer,
-  McpLayer: () => McpLayer,
-  ResultCache: () => ResultCache,
-  SchemaCompressor: () => SchemaCompressor,
-  default: () => mcpBridge,
-  discoverFromMcpJson: () => discoverFromMcpJson
-});
-module.exports = __toCommonJS(index_exports);
-
-// src/core/mcp-layer.ts
-var import_mcp_use = require("mcp-use");
-
 // src/core/discovery.ts
-var import_node_fs = require("fs");
-var import_node_path = require("path");
-var import_node_os = require("os");
+import { readFileSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 function discoverFromMcpJson(path) {
-  const configPath = path ?? (0, import_node_path.join)((0, import_node_os.homedir)(), ".mcp.json");
+  const configPath = path ?? join(homedir(), ".mcp.json");
   let raw;
   try {
-    raw = (0, import_node_fs.readFileSync)(configPath, "utf-8");
+    raw = readFileSync(configPath, "utf-8");
   } catch {
     return [];
   }
@@ -94,6 +58,7 @@ var CachedToolSet = class _CachedToolSet {
 };
 
 // src/core/mcp-layer.ts
+import { MCPClient } from "mcp-use";
 var McpLayer = class {
   constructor(config) {
     this.config = config;
@@ -125,7 +90,7 @@ var McpLayer = class {
         };
       }
     }
-    this.client = import_mcp_use.MCPClient.fromDict({ mcpServers });
+    this.client = MCPClient.fromDict({ mcpServers });
     return this.client;
   }
   /** Get the categories configured for a server */
@@ -435,94 +400,6 @@ var ResultCache = class {
   }
 };
 
-// src/plugin/index.ts
-var registeredTools = /* @__PURE__ */ new Set();
-function mcpBridge(api) {
-  const config = api.config ?? {};
-  const mcpLayer = new McpLayer(config);
-  const analyzer = new ContextAnalyzer();
-  const compressor = new SchemaCompressor();
-  const cache = new ResultCache(config.cache);
-  function registerCompressedTool(compressed) {
-    if (registeredTools.has(compressed.name)) return;
-    const desc = compressed.optionalHint ? `${compressed.shortDescription}. ${compressed.optionalHint}` : compressed.shortDescription;
-    api.registerTool({
-      name: compressed.name,
-      description: desc,
-      parameters: compressed.parameters,
-      execute: async (params) => {
-        const mapping = compressor.decompress(compressed.name, params);
-        if (!mapping) return { error: `Unknown tool: ${compressed.name}` };
-        try {
-          const cached = cache.get(mapping.serverName, mapping.toolName, mapping.fullParams);
-          if (cached) return cached;
-          const result = await mcpLayer.callTool(mapping.serverName, mapping.toolName, mapping.fullParams);
-          analyzer.recordUsage(mapping.toolName, mapping.serverName);
-          if (cache.isCacheable(mapping.toolName)) {
-            cache.set(mapping.serverName, mapping.toolName, mapping.fullParams, result);
-          }
-          return result;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return { error: `Tool call failed: ${msg}` };
-        }
-      }
-    });
-    registeredTools.add(compressed.name);
-  }
-  api.registerTool({
-    name: "mcp_find_tools",
-    description: "Find tools from connected MCP services (Notion, GitHub, Stripe, etc). Use when you need a capability not in your current tools.",
-    parameters: {
-      type: "object",
-      properties: {
-        need: { type: "string", description: 'What you need to do, e.g. "create a notion page"' }
-      },
-      required: ["need"]
-    },
-    execute: async (params) => {
-      try {
-        const allTools = await mcpLayer.discoverTools();
-        if (allTools.length === 0) {
-          return { found: 0, tools: [], message: "No MCP servers configured or no tools available." };
-        }
-        const ranked = analyzer.rank([{ role: "user", content: params.need }], allTools, config.analyzer);
-        const registered = [];
-        for (const match of ranked) {
-          const compressed = compressor.compress(match.tool);
-          registerCompressedTool(compressed);
-          registered.push(`${match.tool.serverName}/${match.tool.name} (${Math.round(match.score * 100)}%)`);
-        }
-        return {
-          found: ranked.length,
-          tools: registered,
-          message: ranked.length > 0 ? `Found ${ranked.length} relevant tool(s). They are now available for use.` : `No tools matched "${params.need}". Try rephrasing your request.`
-        };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { error: `Tool discovery failed: ${msg}` };
-      }
-    }
-  });
-  api.onBeforeAgentTurn?.(async (context) => {
-    try {
-      const allTools = await mcpLayer.discoverTools();
-      if (allTools.length === 0) return;
-      const threshold = config.analyzer?.highConfidenceThreshold ?? 0.7;
-      const ranked = analyzer.rank(context.messages, allTools, {
-        ...config.analyzer,
-        relevanceThreshold: threshold,
-        maxToolsPerTurn: 3
-      });
-      for (const match of ranked) registerCompressedTool(compressor.compress(match.tool));
-    } catch {
-    }
-  });
-  api.onShutdown(async () => {
-    await mcpLayer.shutdown();
-  });
-}
-
 // src/core/aggregator.ts
 var Aggregator = class {
   constructor(config) {
@@ -634,13 +511,13 @@ var Aggregator = class {
     };
   }
 };
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  Aggregator,
+
+export {
+  discoverFromMcpJson,
   CachedToolSet,
-  ContextAnalyzer,
   McpLayer,
-  ResultCache,
+  ContextAnalyzer,
   SchemaCompressor,
-  discoverFromMcpJson
-});
+  ResultCache,
+  Aggregator
+};

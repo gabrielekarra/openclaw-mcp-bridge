@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ContextAnalyzer } from '../src/context-analyzer.js';
-import type { ToolWithServer } from '../src/types.js';
+import { ContextAnalyzer } from '../src/core/context-analyzer.js';
+import type { ToolWithServer } from '../src/core/types.js';
 
 const notionCreatePage: ToolWithServer = {
   name: 'create_page',

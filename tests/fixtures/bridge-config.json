@@ -1,0 +1,11 @@
+{
+  "servers": [
+    {
+      "name": "test-server",
+      "transport": "stdio",
+      "command": "echo",
+      "args": ["hello"]
+    }
+  ],
+  "autoDiscover": false
+}

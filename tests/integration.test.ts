@@ -37,11 +37,11 @@ vi.mock('mcp-use', () => ({
   },
 }));
 
-vi.mock('../src/discovery.js', () => ({
+vi.mock('../src/core/discovery.js', () => ({
   discoverFromMcpJson: vi.fn().mockReturnValue([]),
 }));
 
-import mcpBridge from '../src/index.js';
+import mcpBridge from '../src/plugin/index.js';
 
 function createMockApi(config = {}) {
   const tools = new Map<string, any>();

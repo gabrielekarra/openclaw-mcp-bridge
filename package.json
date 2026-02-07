@@ -1,16 +1,29 @@
 {
   "name": "openclaw-mcp-bridge",
-  "version": "0.1.0",
-  "description": "Context-aware MCP bridge for OpenClaw — connect any MCP server without the token tax. Powered by mcp-use.",
+  "version": "0.2.0",
+  "description": "MCP aggregator server — connects multiple MCP servers and exposes them as one, with context-aware tool filtering. Use standalone, with OpenClaw, or via mcporter.",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "openclaw-mcp-bridge": "./dist/server/index.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.cjs"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "require": "./dist/server/index.cjs"
     }
   },
   "files": [
@@ -20,13 +33,15 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "build": "tsup src/index.ts src/core/index.ts src/server/index.ts --format esm,cjs --dts",
+    "start": "node dist/server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "prepublishOnly": "pnpm build && pnpm test"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "mcp-use": "latest"
   },
   "devDependencies": {
@@ -169,6 +184,8 @@
     "mcp-use",
     "ai-agent",
     "plugin",
-    "tools"
+    "tools",
+    "mcp-server",
+    "aggregator"
   ]
 }

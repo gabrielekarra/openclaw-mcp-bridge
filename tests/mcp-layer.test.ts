@@ -45,11 +45,11 @@ vi.mock('mcp-use', () => {
 });
 
 // Also mock discovery to avoid filesystem access
-vi.mock('../src/discovery.js', () => ({
+vi.mock('../src/core/discovery.js', () => ({
   discoverFromMcpJson: vi.fn().mockReturnValue([]),
 }));
 
-import { McpLayer } from '../src/mcp-layer.js';
+import { McpLayer } from '../src/core/mcp-layer.js';
 import { MCPClient } from 'mcp-use';
 
 describe('McpLayer', () => {
@@ -77,7 +77,7 @@ describe('McpLayer', () => {
     });
 
     it('merges explicit and discovered servers (explicit wins)', async () => {
-      const { discoverFromMcpJson } = await import('../src/discovery.js');
+      const { discoverFromMcpJson } = await import('../src/core/discovery.js');
       vi.mocked(discoverFromMcpJson).mockReturnValue([
         { name: 'notion', transport: 'stdio', command: 'other-cmd' },
         { name: 'github', transport: 'stdio', command: 'gh-cmd' },

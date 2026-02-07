@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
-import { discoverFromMcpJson } from '../src/discovery.js';
+import { discoverFromMcpJson } from '../src/core/discovery.js';
 
 const fixturesDir = join(import.meta.dirname, 'fixtures');
 
