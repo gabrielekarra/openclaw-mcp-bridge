@@ -44,4 +44,16 @@ describe('loadConfig', () => {
     expect(config.servers).toHaveLength(1);
     expect(config.servers![0].name).toBe('test-server');
   });
+
+  it('unwraps plugin-shaped config files', () => {
+    const config = loadConfig({
+      configPath: join(fixturesDir, 'plugin-style-bridge-config.json'),
+      http: false,
+      port: 3000,
+    });
+    expect(config.mode).toBe('traditional');
+    expect(config).toHaveProperty('servers');
+    expect(config.servers).toHaveLength(1);
+    expect(config.servers![0].name).toBe('plugin-test-server');
+  });
 });

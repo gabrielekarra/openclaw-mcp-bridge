@@ -143,6 +143,7 @@ In `claude_desktop_config.json`:
 ```
 
 Plugin provides extra features: `mcp_find_tools`, `mcp_call_tool`, and `mcp_list_servers` for explicit discovery + invocation flow.
+In traditional mode, downstream tools are registered as `mcp_<server>_<tool>` names.
 
 ---
 

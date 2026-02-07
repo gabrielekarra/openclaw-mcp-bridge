@@ -65,13 +65,13 @@ Notes:
 Run the bridge server directly:
 
 ```bash
-pnpm start -- --config ./examples/multi-server-config.json
+pnpm start -- --config ./examples/bridge-config.json
 ```
 
 You can also run it directly with Node:
 
 ```bash
-node dist/server/index.js --config ./examples/multi-server-config.json
+node dist/server/index.js --config ./examples/bridge-config.json
 ```
 
 For Claude Desktop, add this to `claude_desktop_config.json`:
@@ -84,7 +84,7 @@ For Claude Desktop, add this to `claude_desktop_config.json`:
       "args": [
         "/absolute/path/to/openclaw-mcp-bridge/dist/server/index.js",
         "--config",
-        "/absolute/path/to/openclaw-mcp-bridge/examples/multi-server-config.json"
+        "/absolute/path/to/openclaw-mcp-bridge/examples/bridge-config.json"
       ]
     }
   }
@@ -259,6 +259,9 @@ You can provide `servers` explicitly in plugin config:
 
 See `examples/` for ready-to-use configs.
 
+Standalone note:
+- `loadConfig()` accepts both standalone bridge shape (`{ mode, servers, ... }`) and OpenClaw plugin shape (`plugins.entries["mcp-bridge"].config`).
+
 ## Config Reference
 
 | Option | Type | Default | Description |
@@ -290,6 +293,7 @@ pnpm lint
 | Tools not matching user intent | Query too narrow / threshold too high | Broaden `need` text or lower `analyzer.relevanceThreshold` |
 | Tool was found but not executed | Agent tried to call tool directly | Call `mcp_call_tool` with `{ server, tool, arguments }` |
 | Standalone server not starting | Wrong Node version | Use Node `20.19+` |
+| `@modelcontextprotocol/ext-apps` postinstall warning on newer Node versions | Optional setup script warning | Harmless for this project; install/build can continue |
 
 ## License
 

@@ -7,6 +7,20 @@ export interface CliArgs {
   port: number;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
+}
+
+function unwrapPluginStyleConfig(parsed: unknown): BridgeConfig | null {
+  const root = asRecord(parsed);
+  const plugins = asRecord(root?.plugins);
+  const entries = asRecord(plugins?.entries);
+  const bridgeEntry = asRecord(entries?.['mcp-bridge']);
+  const config = asRecord(bridgeEntry?.config);
+  if (!config) return null;
+  return config as BridgeConfig;
+}
+
 export function parseArgs(argv: string[]): CliArgs {
   const result: CliArgs = { configPath: null, http: false, port: 3000 };
 
@@ -29,7 +43,8 @@ export function loadConfig(args: CliArgs): BridgeConfig {
 
   try {
     const raw = readFileSync(args.configPath, 'utf-8');
-    return JSON.parse(raw) as BridgeConfig;
+    const parsed = JSON.parse(raw) as unknown;
+    return unwrapPluginStyleConfig(parsed) ?? (asRecord(parsed) as BridgeConfig | null) ?? {};
   } catch {
     return {};
   }

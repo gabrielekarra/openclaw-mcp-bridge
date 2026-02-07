@@ -10,6 +10,18 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 
 // src/server/cli.ts
 import { readFileSync } from "fs";
+function asRecord(value) {
+  return typeof value === "object" && value !== null ? value : null;
+}
+function unwrapPluginStyleConfig(parsed) {
+  const root = asRecord(parsed);
+  const plugins = asRecord(root?.plugins);
+  const entries = asRecord(plugins?.entries);
+  const bridgeEntry = asRecord(entries?.["mcp-bridge"]);
+  const config2 = asRecord(bridgeEntry?.config);
+  if (!config2) return null;
+  return config2;
+}
 function parseArgs(argv) {
   const result = { configPath: null, http: false, port: 3e3 };
   for (let i = 0; i < argv.length; i++) {
@@ -28,7 +40,8 @@ function loadConfig(args2) {
   if (!args2.configPath) return {};
   try {
     const raw = readFileSync(args2.configPath, "utf-8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return unwrapPluginStyleConfig(parsed) ?? asRecord(parsed) ?? {};
   } catch {
     return {};
   }

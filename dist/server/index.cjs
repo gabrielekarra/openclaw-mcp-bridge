@@ -619,6 +619,18 @@ var Aggregator = class {
 
 // src/server/cli.ts
 var import_node_fs2 = require("fs");
+function asRecord2(value) {
+  return typeof value === "object" && value !== null ? value : null;
+}
+function unwrapPluginStyleConfig(parsed) {
+  const root = asRecord2(parsed);
+  const plugins = asRecord2(root?.plugins);
+  const entries = asRecord2(plugins?.entries);
+  const bridgeEntry = asRecord2(entries?.["mcp-bridge"]);
+  const config2 = asRecord2(bridgeEntry?.config);
+  if (!config2) return null;
+  return config2;
+}
 function parseArgs(argv) {
   const result = { configPath: null, http: false, port: 3e3 };
   for (let i = 0; i < argv.length; i++) {
@@ -637,7 +649,8 @@ function loadConfig(args2) {
   if (!args2.configPath) return {};
   try {
     const raw = (0, import_node_fs2.readFileSync)(args2.configPath, "utf-8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return unwrapPluginStyleConfig(parsed) ?? asRecord2(parsed) ?? {};
   } catch {
     return {};
   }

@@ -1,0 +1,12 @@
+{
+  "mode": "smart",
+  "autoDiscover": false,
+  "servers": [
+    {
+      "name": "github",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    }
+  ]
+}

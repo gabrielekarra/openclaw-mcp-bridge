@@ -1,0 +1,21 @@
+{
+  "plugins": {
+    "entries": {
+      "mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "mode": "traditional",
+          "autoDiscover": false,
+          "servers": [
+            {
+              "name": "plugin-test-server",
+              "transport": "stdio",
+              "command": "echo",
+              "args": ["from-plugin-shape"]
+            }
+          ]
+        }
+      }
+    }
+  }
+}
