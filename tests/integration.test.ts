@@ -156,6 +156,24 @@ describe('Integration: full plugin flow', () => {
       }
     });
 
+    it('calls registered tools correctly when runtime passes (toolCallId, params)', async () => {
+      await api._tools.get('mcp_find_tools').execute({ need: 'create a notion page' });
+
+      const notionTool = [...api._tools.keys()].find(k => k === 'mcp_notion_create_page');
+      if (!notionTool) return;
+
+      const toolSpec = api._tools.get(notionTool);
+      const callResult = await toolSpec.execute(
+        'chatcmpl-tool-0ec53e05ad7448f49e20c4dd35b185da',
+        { title: 'Positional Args Page' },
+        {},
+        null
+      );
+
+      expect(notionSession.callTool).toHaveBeenCalledWith('create_page', { title: 'Positional Args Page' });
+      expect(callResult).toBeDefined();
+    });
+
     it('notion tools rank higher than github for notion-specific queries', async () => {
       const result = await api._tools.get('mcp_find_tools').execute({ need: 'create a page in notion workspace' });
       expect(result.tools[0].server).toBe('notion');

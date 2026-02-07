@@ -536,7 +536,8 @@ function mcpBridge(api) {
       name: compressed.name,
       description: desc,
       parameters: compressed.parameters,
-      execute: async (params) => {
+      execute: async (...incoming) => {
+        const params = parseRecordJson(extractExecuteParams(incoming)) ?? {};
         const mapping = compressor.decompress(compressed.name, params ?? {});
         if (!mapping) return { error: `Unknown tool: ${compressed.name}` };
         try {

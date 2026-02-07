@@ -98,7 +98,8 @@ export default function mcpBridge(api: any): void {
       name: compressed.name,
       description: desc,
       parameters: compressed.parameters,
-      execute: async (params: Record<string, unknown>) => {
+      execute: async (...incoming: unknown[]) => {
+        const params = parseRecordJson(extractExecuteParams(incoming)) ?? {};
         const mapping = compressor.decompress(compressed.name, params ?? {});
         if (!mapping) return { error: `Unknown tool: ${compressed.name}` };
         try {
