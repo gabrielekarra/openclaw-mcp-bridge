@@ -1,7 +1,7 @@
 {
   "name": "openclaw-mcp-bridge",
   "version": "0.2.0",
-  "description": "MCP aggregator server — connects multiple MCP servers and exposes them as one, with context-aware tool filtering. Use standalone, with OpenClaw, or via mcporter.",
+  "description": "MCP aggregator server — connects multiple MCP servers and exposes them as one, with context-aware tool filtering. Use standalone or as an OpenClaw plugin.",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -28,6 +28,7 @@
   },
   "files": [
     "dist",
+    "openclaw.plugin.json",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -51,122 +52,7 @@
     "vitest": "^2.0.0"
   },
   "openclaw": {
-    "extensions": [
-      {
-        "type": "tool",
-        "id": "mcp-bridge",
-        "entry": "dist/index.js"
-      }
-    ]
-  },
-  "configSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "properties": {
-      "servers": {
-        "type": "array",
-        "description": "MCP servers to connect to",
-        "items": {
-          "type": "object",
-          "required": [
-            "name"
-          ],
-          "properties": {
-            "name": {
-              "type": "string"
-            },
-            "transport": {
-              "type": "string",
-              "enum": [
-                "stdio",
-                "http",
-                "sse"
-              ]
-            },
-            "command": {
-              "type": "string"
-            },
-            "args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "url": {
-              "type": "string"
-            },
-            "env": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            },
-            "headers": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            },
-            "categories": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Hint categories for relevance matching"
-            }
-          }
-        }
-      },
-      "autoDiscover": {
-        "type": "boolean",
-        "default": true,
-        "description": "Auto-detect servers from ~/.mcp.json"
-      },
-      "analyzer": {
-        "type": "object",
-        "properties": {
-          "maxToolsPerTurn": {
-            "type": "number",
-            "default": 5
-          },
-          "relevanceThreshold": {
-            "type": "number",
-            "default": 0.3
-          },
-          "highConfidenceThreshold": {
-            "type": "number",
-            "default": 0.7
-          }
-        }
-      },
-      "cache": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "default": true
-          },
-          "ttlMs": {
-            "type": "number",
-            "default": 30000
-          }
-        }
-      }
-    }
-  },
-  "uiHints": {
-    "servers": {
-      "label": "MCP Servers"
-    },
-    "autoDiscover": {
-      "label": "Auto-discover from ~/.mcp.json"
-    },
-    "analyzer": {
-      "label": "Analyzer Settings"
-    },
-    "cache": {
-      "label": "Cache Settings"
-    }
+    "extensions": ["dist/index.js"]
   },
   "repository": {
     "type": "git",

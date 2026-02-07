@@ -45,13 +45,15 @@ export class ContextAnalyzer {
     allTools: ToolWithServer[],
     config?: AnalyzerConfig
   ): RelevanceScore[] {
+    if (!Array.isArray(messages) || !Array.isArray(allTools) || allTools.length === 0) return [];
+
     const maxTools = config?.maxToolsPerTurn ?? 5;
     const threshold = config?.relevanceThreshold ?? 0.3;
 
     const userMsgs = messages.filter(m => m.role === 'user').slice(-3);
     if (userMsgs.length === 0) return [];
 
-    const messageText = userMsgs.map(m => m.content).join(' ');
+    const messageText = userMsgs.map(m => m.content ?? '').join(' ');
     const words = extractWords(messageText);
     if (words.length === 0) return [];
 

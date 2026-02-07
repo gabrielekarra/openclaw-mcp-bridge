@@ -45,11 +45,11 @@ export class Aggregator {
     // Meta-tool: find_tools
     tools.push({
       name: 'find_tools',
-      description: 'Find relevant tools from connected MCP services. Use when you need a capability not in your current tools.',
+      description: 'Search and discover tools from external MCP servers. Call this when you need capabilities beyond your built-in tools. Examples: creating GitHub issues, searching Notion, managing databases, file operations. Returns a list of matching tools ranked by relevance.',
       inputSchema: {
         type: 'object',
         properties: {
-          need: { type: 'string', description: 'What you need to do, e.g. "create a notion page"' },
+          need: { type: 'string', description: 'What you need to accomplish. Example: "create a github issue", "search notion pages". Use empty string to list all available tools.' },
         },
         required: ['need'],
       },
@@ -111,18 +111,19 @@ export class Aggregator {
   private async handleFindTools(
     params: { need: string }
   ): Promise<{ content: { type: string; text: string }[] }> {
+    const need = typeof params?.need === 'string' ? params.need : '';
     const allTools = await this.mcpLayer.discoverTools();
-    if (allTools.length === 0) {
+    if (!Array.isArray(allTools) || allTools.length === 0) {
       return {
         content: [{ type: 'text', text: JSON.stringify({ found: 0, tools: [], message: 'No MCP servers configured or no tools available.' }) }],
       };
     }
 
     const ranked = this.analyzer.rank(
-      [{ role: 'user', content: params.need }],
+      [{ role: 'user', content: need }],
       allTools,
       this.config.analyzer
-    );
+    ) ?? [];
 
     // Ensure discovered tools are in route map
     for (const match of ranked) {
@@ -145,7 +146,7 @@ export class Aggregator {
           tools: toolNames,
           message: ranked.length > 0
             ? `Found ${ranked.length} relevant tool(s). They are now available for use.`
-            : `No tools matched "${params.need}". Try rephrasing your request.`,
+            : `No tools matched "${need}". Try rephrasing your request.`,
         }),
       }],
     };

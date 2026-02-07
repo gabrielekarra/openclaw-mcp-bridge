@@ -68,12 +68,13 @@ describe('Integration: full plugin flow', () => {
     vi.clearAllMocks();
   });
 
-  it('registers mcp_find_tools meta-tool with correct schema', () => {
+  it('registers mcp_find_tools and mcp_list_servers with correct schemas', () => {
     const api = createMockApi({ servers: [], autoDiscover: false });
     mcpBridge(api);
     expect(api._tools.has('mcp_find_tools')).toBe(true);
-    const tool = api._tools.get('mcp_find_tools');
-    expect(tool.parameters.required).toContain('need');
+    expect(api._tools.has('mcp_list_servers')).toBe(true);
+    const findTool = api._tools.get('mcp_find_tools');
+    expect(findTool.parameters.required).toContain('need');
   });
 
   it('registers onShutdown and onBeforeAgentTurn hooks', () => {
@@ -90,7 +91,7 @@ describe('Integration: full plugin flow', () => {
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'anything' });
     expect(result.found).toBe(0);
     expect(result.tools).toEqual([]);
-    expect(result.message).toContain('No MCP servers');
+    expect(result.hint).toContain('No MCP servers');
   });
 
   it('returns no-match message when query has zero relevance', async () => {

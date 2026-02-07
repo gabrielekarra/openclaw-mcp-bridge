@@ -59,5 +59,4 @@ Config schema is in `package.json` under `configSchema`. See `examples/` for sam
 ## Deployment Modes
 
 1. **Standalone MCP server**: `npx openclaw-mcp-bridge --config ./config.json` — any MCP client connects via stdio
-2. **OpenClaw plugin**: deeper integration with `mcp_find_tools`, `onBeforeAgentTurn` auto-injection
-3. **OpenClaw via mcporter**: `openclaw mcp add --transport stdio bridge npx openclaw-mcp-bridge`
+2. **OpenClaw plugin**: deeper integration with `mcp_find_tools`, `mcp_list_servers`, `onBeforeAgentTurn` auto-injection

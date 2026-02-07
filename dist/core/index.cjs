@@ -150,7 +150,8 @@ var McpLayer = class {
       }
       try {
         const session = await this.ensureSession(client, serverName);
-        const tools = await session.listTools();
+        const rawTools = await session.listTools();
+        const tools = Array.isArray(rawTools) ? rawTools : [];
         const enriched = tools.map((t) => ({
           name: t.name,
           description: t.description,
@@ -183,6 +184,15 @@ var McpLayer = class {
   /** Get configured server names (for diagnostics) */
   getServerNames() {
     return this.serverEntries.map((s) => s.name);
+  }
+  /** Get info about all configured servers and their connection/tool state */
+  getServerInfo() {
+    return this.serverEntries.map((s) => ({
+      name: s.name,
+      transport: s.transport,
+      connected: this.client !== null && this.client.getSession(s.name) !== null,
+      toolCount: this.toolCache.get(s.name)?.tools.length ?? 0
+    }));
   }
 };
 
@@ -219,11 +229,12 @@ function extractWords(text) {
 var ContextAnalyzer = class {
   recentlyUsed = /* @__PURE__ */ new Map();
   rank(messages, allTools, config) {
+    if (!Array.isArray(messages) || !Array.isArray(allTools) || allTools.length === 0) return [];
     const maxTools = config?.maxToolsPerTurn ?? 5;
     const threshold = config?.relevanceThreshold ?? 0.3;
     const userMsgs = messages.filter((m) => m.role === "user").slice(-3);
     if (userMsgs.length === 0) return [];
-    const messageText = userMsgs.map((m) => m.content).join(" ");
+    const messageText = userMsgs.map((m) => m.content ?? "").join(" ");
     const words = extractWords(messageText);
     if (words.length === 0) return [];
     const scores = [];
@@ -465,11 +476,11 @@ var Aggregator = class {
     const tools = [];
     tools.push({
       name: "find_tools",
-      description: "Find relevant tools from connected MCP services. Use when you need a capability not in your current tools.",
+      description: "Search and discover tools from external MCP servers. Call this when you need capabilities beyond your built-in tools. Examples: creating GitHub issues, searching Notion, managing databases, file operations. Returns a list of matching tools ranked by relevance.",
       inputSchema: {
         type: "object",
         properties: {
-          need: { type: "string", description: 'What you need to do, e.g. "create a notion page"' }
+          need: { type: "string", description: 'What you need to accomplish. Example: "create a github issue", "search notion pages". Use empty string to list all available tools.' }
         },
         required: ["need"]
       }
@@ -512,17 +523,18 @@ var Aggregator = class {
     await this.mcpLayer.shutdown();
   }
   async handleFindTools(params) {
+    const need = typeof params?.need === "string" ? params.need : "";
     const allTools = await this.mcpLayer.discoverTools();
-    if (allTools.length === 0) {
+    if (!Array.isArray(allTools) || allTools.length === 0) {
       return {
         content: [{ type: "text", text: JSON.stringify({ found: 0, tools: [], message: "No MCP servers configured or no tools available." }) }]
       };
     }
     const ranked = this.analyzer.rank(
-      [{ role: "user", content: params.need }],
+      [{ role: "user", content: need }],
       allTools,
       this.config.analyzer
-    );
+    ) ?? [];
     for (const match of ranked) {
       const compressed = this.compressor.compress(match.tool);
       this.routeMap.set(compressed.name, {
@@ -539,7 +551,7 @@ var Aggregator = class {
         text: JSON.stringify({
           found: ranked.length,
           tools: toolNames,
-          message: ranked.length > 0 ? `Found ${ranked.length} relevant tool(s). They are now available for use.` : `No tools matched "${params.need}". Try rephrasing your request.`
+          message: ranked.length > 0 ? `Found ${ranked.length} relevant tool(s). They are now available for use.` : `No tools matched "${need}". Try rephrasing your request.`
         })
       }]
     };

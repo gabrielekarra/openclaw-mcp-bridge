@@ -42,7 +42,7 @@ A **standalone MCP aggregator server** that connects multiple downstream MCP ser
 
 ```
 ┌──────────────────────┐
-│  OpenClaw (mcporter)  │──── stdio/http ────┐
+│  OpenClaw (plugin)    │──── direct ────────┐
 └──────────────────────┘                     │
                                              ▼
 ┌──────────────────────┐          ┌──────────────────────┐
@@ -142,15 +142,7 @@ In `claude_desktop_config.json`:
 }
 ```
 
-Plugin provides extra features: `mcp_find_tools` meta-tool, `onBeforeAgentTurn` auto-injection, full conversation context.
-
-### Mode 3: OpenClaw via mcporter
-
-```bash
-openclaw mcp add --transport stdio bridge npx openclaw-mcp-bridge
-```
-
-Zero plugin install. Uses standard MCP protocol.
+Plugin provides extra features: `mcp_find_tools` meta-tool, `mcp_list_servers`, `onBeforeAgentTurn` auto-injection, full conversation context.
 
 ---
 

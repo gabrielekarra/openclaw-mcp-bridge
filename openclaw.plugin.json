@@ -1,0 +1,31 @@
+{
+  "id": "mcp-bridge",
+  "name": "MCP Bridge",
+  "version": "0.2.0",
+  "description": "Smart MCP aggregator — connect any MCP server to OpenClaw without the token tax",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "servers": {
+        "type": "array",
+        "description": "Explicit MCP server definitions",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "transport": { "type": "string", "enum": ["stdio", "http", "sse"] },
+            "command": { "type": "string" },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "url": { "type": "string" }
+          },
+          "required": ["name", "transport"]
+        }
+      },
+      "autoDiscover": {
+        "type": "boolean",
+        "default": true,
+        "description": "Auto-discover MCP servers from ~/.mcp.json"
+      }
+    }
+  }
+}

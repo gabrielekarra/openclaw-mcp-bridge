@@ -1,3 +1,22 @@
+/**
+ * MCP Server Auto-Discovery
+ *
+ * Discovery strategy (current implementation):
+ * - Reads ~/.mcp.json — the standard MCP config file used by Claude Desktop
+ * - Parses the `mcpServers` object and converts each entry to our ServerEntry format
+ * - Supports stdio servers (command + args) and HTTP/SSE servers (url)
+ * - Returns empty array if the file is missing, unreadable, or malformed
+ *
+ * Known config locations NOT yet supported (future work):
+ * - ~/.cursor/mcp.json (Cursor IDE)
+ * - ~/.config/claude-desktop/claude_desktop_config.json (Claude Desktop on Linux)
+ * - ~/Library/Application Support/Claude/claude_desktop_config.json (Claude Desktop on macOS)
+ * - .mcp.json in current working directory (project-local)
+ *
+ * When merging with explicit server config, explicit entries win on name collision
+ * (handled by McpLayer constructor, not here).
+ */
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';

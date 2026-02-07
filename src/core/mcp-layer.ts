@@ -73,7 +73,8 @@ export class McpLayer {
 
       try {
         const session = await this.ensureSession(client, serverName);
-        const tools: Tool[] = await session.listTools();
+        const rawTools = await session.listTools();
+        const tools: Tool[] = Array.isArray(rawTools) ? rawTools : [];
         const enriched: ToolWithServer[] = tools.map((t) => ({
           name: t.name,
           description: t.description,
@@ -116,5 +117,15 @@ export class McpLayer {
   /** Get configured server names (for diagnostics) */
   getServerNames(): string[] {
     return this.serverEntries.map(s => s.name);
+  }
+
+  /** Get info about all configured servers and their connection/tool state */
+  getServerInfo(): Array<{ name: string; transport: string; connected: boolean; toolCount: number }> {
+    return this.serverEntries.map(s => ({
+      name: s.name,
+      transport: s.transport,
+      connected: this.client !== null && this.client.getSession(s.name) !== null,
+      toolCount: this.toolCache.get(s.name)?.tools.length ?? 0,
+    }));
   }
 }

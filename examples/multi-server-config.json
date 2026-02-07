@@ -4,48 +4,24 @@
       "mcp-bridge": {
         "enabled": true,
         "config": {
+          "autoDiscover": false,
           "servers": [
-            {
-              "name": "notion",
-              "transport": "stdio",
-              "command": "npx",
-              "args": ["-y", "@notionhq/mcp"],
-              "env": { "NOTION_API_KEY": "${NOTION_API_KEY}" },
-              "categories": ["productivity", "notes", "docs"]
-            },
             {
               "name": "github",
               "transport": "stdio",
               "command": "npx",
               "args": ["-y", "@modelcontextprotocol/server-github"],
-              "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" },
-              "categories": ["code", "issues", "repos"]
+              "categories": ["code", "project-management"]
             },
             {
-              "name": "stripe",
-              "transport": "http",
-              "url": "http://localhost:3000/mcp",
-              "headers": { "Authorization": "Bearer ${STRIPE_KEY}" },
-              "categories": ["payments", "billing"]
+              "name": "notion",
+              "transport": "stdio",
+              "command": "npx",
+              "args": ["-y", "@notionhq/mcp-server"],
+              "categories": ["notes", "documents"]
             }
-          ],
-          "analyzer": {
-            "maxToolsPerTurn": 5,
-            "relevanceThreshold": 0.3,
-            "highConfidenceThreshold": 0.7
-          },
-          "cache": {
-            "enabled": true,
-            "ttlMs": 30000
-          }
+          ]
         }
-      }
-    }
-  },
-  "tools": {
-    "sandbox": {
-      "tools": {
-        "allow": ["group:runtime", "group:fs", "mcp-bridge"]
       }
     }
   }
