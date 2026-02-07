@@ -93,7 +93,7 @@ For Claude Desktop, add this to `claude_desktop_config.json`:
 
 ## Operating Modes
 
-The plugin supports two operating modes controlled by one config key:
+The bridge supports two operating modes (both in OpenClaw plugin mode and standalone MCP server mode) controlled by one config key:
 
 ```json
 {
@@ -140,6 +140,24 @@ Migration note:
       }
     }
   }
+}
+```
+
+### Standalone mode examples
+
+`examples/bridge-config.json` shape:
+
+```json
+{
+  "mode": "smart",
+  "autoDiscover": true
+}
+```
+
+```json
+{
+  "mode": "traditional",
+  "autoDiscover": true
 }
 ```
 
@@ -197,6 +215,10 @@ Examples:
 - Registers every discovered MCP tool at startup.
 - Tool names are namespaced as `mcp_<server>_<tool>`.
 - Each registered tool directly calls its underlying MCP server tool.
+
+Standalone behavior summary:
+- `mode: smart` exposes `find_tools` plus compressed downstream tool entries.
+- `mode: traditional` exposes only namespaced downstream tools (no `find_tools` meta-tool).
 
 ## How the Flow Works
 

@@ -82,6 +82,8 @@ var McpLayer = class {
   client = null;
   toolCache = /* @__PURE__ */ new Map();
   serverEntries;
+  lastSuccessfulServers = /* @__PURE__ */ new Set();
+  lastFailedServers = /* @__PURE__ */ new Set();
   /** Convert our config to mcp-use's expected format and lazily create client */
   getClient() {
     if (this.client) return this.client;
@@ -115,12 +117,19 @@ var McpLayer = class {
   }
   /** Discover all tools from all configured MCP servers */
   async discoverTools() {
-    if (this.serverEntries.length === 0) return [];
+    if (this.serverEntries.length === 0) {
+      this.lastSuccessfulServers.clear();
+      this.lastFailedServers.clear();
+      return [];
+    }
     const client = this.getClient();
     const allTools = [];
+    const successfulServers = /* @__PURE__ */ new Set();
+    const failedServers = /* @__PURE__ */ new Set();
     for (const serverName of client.getServerNames()) {
       const cached = this.toolCache.get(serverName);
       if (cached && !cached.isStale()) {
+        successfulServers.add(serverName);
         allTools.push(...cached.tools);
         continue;
       }
@@ -136,11 +145,15 @@ var McpLayer = class {
           categories: this.getServerCategories(serverName)
         }));
         this.toolCache.set(serverName, new CachedToolSet(enriched));
+        successfulServers.add(serverName);
         allTools.push(...enriched);
       } catch (err) {
+        failedServers.add(serverName);
         console.warn(`[mcp-bridge] Failed to list tools from "${serverName}":`, err);
       }
     }
+    this.lastSuccessfulServers = successfulServers;
+    this.lastFailedServers = failedServers;
     return allTools;
   }
   /** Execute a tool call on a specific server */
@@ -160,6 +173,13 @@ var McpLayer = class {
   /** Get configured server names (for diagnostics) */
   getServerNames() {
     return this.serverEntries.map((s) => s.name);
+  }
+  /** Get status for the most recent discovery pass */
+  getLastDiscoveryStatus() {
+    return {
+      successfulServers: [...this.lastSuccessfulServers],
+      failedServers: [...this.lastFailedServers]
+    };
   }
   /** Get info about all configured servers and their connection/tool state */
   getServerInfo() {
@@ -461,6 +481,24 @@ function extractNeed(params) {
   const candidate = root?.need ?? input?.need ?? parsedArguments?.need ?? args2?.need ?? parameters?.need ?? toolInput?.need;
   return typeof candidate === "string" ? candidate : "";
 }
+function sanitizeName(value) {
+  return value.replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_").toLowerCase();
+}
+function buildTraditionalToolName(tool, usedNames) {
+  const base = `mcp_${sanitizeName(tool.serverName)}_${sanitizeName(tool.name)}`;
+  if (!usedNames.has(base)) {
+    usedNames.add(base);
+    return base;
+  }
+  let suffix = 2;
+  let candidate = `${base}_${suffix}`;
+  while (usedNames.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}_${suffix}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
 var Aggregator = class {
   constructor(config2) {
     this.config = config2;
@@ -468,27 +506,71 @@ var Aggregator = class {
     this.analyzer = new ContextAnalyzer();
     this.compressor = new SchemaCompressor();
     this.cache = new ResultCache(config2.cache);
+    this.mode = config2.mode === "traditional" ? "traditional" : "smart";
   }
   mcpLayer;
   analyzer;
   compressor;
   cache;
+  mode;
   /** Maps compressed name → { serverName, toolName } for routing */
   routeMap = /* @__PURE__ */ new Map();
   /** Discover tools from all downstream MCP servers and build route map */
   async refreshTools() {
     const tools = await this.mcpLayer.discoverTools();
+    const failedServers = new Set(this.mcpLayer.getLastDiscoveryStatus().failedServers);
+    const nextRouteMap = /* @__PURE__ */ new Map();
+    if (this.mode === "traditional") {
+      const usedNames = /* @__PURE__ */ new Set();
+      if (failedServers.size > 0) {
+        for (const [name, route] of this.routeMap) {
+          if (!failedServers.has(route.serverName)) continue;
+          nextRouteMap.set(name, route);
+          usedNames.add(name);
+        }
+      }
+      for (const tool of tools) {
+        const name = buildTraditionalToolName(tool, usedNames);
+        nextRouteMap.set(name, {
+          serverName: tool.serverName,
+          toolName: tool.name,
+          tool
+        });
+      }
+      this.routeMap = nextRouteMap;
+      return;
+    }
     for (const tool of tools) {
       const compressed = this.compressor.compress(tool);
-      this.routeMap.set(compressed.name, {
+      nextRouteMap.set(compressed.name, {
         serverName: tool.serverName,
-        toolName: tool.name
+        toolName: tool.name,
+        tool
       });
     }
+    if (failedServers.size > 0) {
+      for (const [name, route] of this.routeMap) {
+        if (!failedServers.has(route.serverName)) continue;
+        if (!nextRouteMap.has(name)) {
+          nextRouteMap.set(name, route);
+        }
+      }
+    }
+    this.routeMap = nextRouteMap;
   }
-  /** Return all tools in MCP Tool shape (find_tools meta-tool + downstream tools) */
+  /** Return tools in MCP Tool shape for the active mode */
   getToolList() {
     const tools = [];
+    if (this.mode === "traditional") {
+      for (const [name, route] of this.routeMap) {
+        tools.push({
+          name,
+          description: route.tool.description ?? `${route.serverName}/${route.toolName}`,
+          inputSchema: route.tool.inputSchema ?? { type: "object", properties: {} }
+        });
+      }
+      return tools;
+    }
     tools.push({
       name: "find_tools",
       description: "Search and discover tools from external MCP servers. Call this when you need capabilities beyond your built-in tools. Examples: creating GitHub issues, searching Notion, managing databases, file operations. Returns a list of matching tools ranked by relevance.",
@@ -500,10 +582,8 @@ var Aggregator = class {
         required: []
       }
     });
-    for (const [compressedName] of this.routeMap) {
-      const original = this.compressor.getOriginal(compressedName);
-      if (!original) continue;
-      const compressed = this.compressor.compress(original);
+    for (const [compressedName, route] of this.routeMap) {
+      const compressed = this.compressor.compress(route.tool);
       const desc = compressed.optionalHint ? `${compressed.shortDescription}. ${compressed.optionalHint}` : compressed.shortDescription;
       tools.push({
         name: compressed.name,
@@ -515,12 +595,16 @@ var Aggregator = class {
   }
   /** Call a tool by name (handles find_tools meta-tool and downstream routing) */
   async callTool(name, params) {
-    if (name === "find_tools") {
+    if (this.mode === "smart" && name === "find_tools") {
       return this.handleFindTools(params);
     }
     const route = this.routeMap.get(name);
     if (!route) {
       throw new Error(`Unknown tool: ${name}`);
+    }
+    if (this.mode === "traditional") {
+      const result2 = await this.mcpLayer.callTool(route.serverName, route.toolName, params);
+      return result2;
     }
     const cached = this.cache.get(route.serverName, route.toolName, params);
     if (cached) {
@@ -558,7 +642,8 @@ var Aggregator = class {
         const compressed = this.compressor.compress(tool);
         this.routeMap.set(compressed.name, {
           serverName: tool.serverName,
-          toolName: tool.name
+          toolName: tool.name,
+          tool
         });
       }
       return {
@@ -595,7 +680,8 @@ var Aggregator = class {
       const compressed = this.compressor.compress(match.tool);
       this.routeMap.set(compressed.name, {
         serverName: match.tool.serverName,
-        toolName: match.tool.name
+        toolName: match.tool.name,
+        tool: match.tool
       });
     }
     const toolNames = filtered.map((m) => ({

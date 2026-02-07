@@ -8,6 +8,8 @@ export class McpLayer {
   private client: MCPClient | null = null;
   private toolCache = new Map<string, CachedToolSet>();
   private serverEntries: ServerEntry[];
+  private lastSuccessfulServers = new Set<string>();
+  private lastFailedServers = new Set<string>();
 
   constructor(private config: BridgeConfig) {
     const explicit = config.servers ?? [];
@@ -58,15 +60,22 @@ export class McpLayer {
 
   /** Discover all tools from all configured MCP servers */
   async discoverTools(): Promise<ToolWithServer[]> {
-    if (this.serverEntries.length === 0) return [];
+    if (this.serverEntries.length === 0) {
+      this.lastSuccessfulServers.clear();
+      this.lastFailedServers.clear();
+      return [];
+    }
 
     const client = this.getClient();
     const allTools: ToolWithServer[] = [];
+    const successfulServers = new Set<string>();
+    const failedServers = new Set<string>();
 
     for (const serverName of client.getServerNames()) {
       // Return cached tools if still fresh
       const cached = this.toolCache.get(serverName);
       if (cached && !cached.isStale()) {
+        successfulServers.add(serverName);
         allTools.push(...cached.tools);
         continue;
       }
@@ -84,12 +93,17 @@ export class McpLayer {
         }));
 
         this.toolCache.set(serverName, new CachedToolSet(enriched));
+        successfulServers.add(serverName);
         allTools.push(...enriched);
       } catch (err) {
+        failedServers.add(serverName);
         console.warn(`[mcp-bridge] Failed to list tools from "${serverName}":`, err);
         // Skip failed servers, continue with others
       }
     }
+
+    this.lastSuccessfulServers = successfulServers;
+    this.lastFailedServers = failedServers;
 
     return allTools;
   }
@@ -117,6 +131,14 @@ export class McpLayer {
   /** Get configured server names (for diagnostics) */
   getServerNames(): string[] {
     return this.serverEntries.map(s => s.name);
+  }
+
+  /** Get status for the most recent discovery pass */
+  getLastDiscoveryStatus(): { successfulServers: string[]; failedServers: string[] } {
+    return {
+      successfulServers: [...this.lastSuccessfulServers],
+      failedServers: [...this.lastFailedServers],
+    };
   }
 
   /** Get info about all configured servers and their connection/tool state */

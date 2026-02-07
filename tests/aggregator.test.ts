@@ -52,6 +52,11 @@ describe('Aggregator', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockClientInstance.getServerNames.mockReset().mockReturnValue(['notion']);
+    mockClientInstance.getSession.mockReset().mockReturnValue(null);
+    mockClientInstance.createSession.mockReset().mockResolvedValue(mockSession);
+    mockClientInstance.close.mockReset().mockResolvedValue(undefined);
+    mockSession.callTool.mockReset().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
     aggregator = new Aggregator({
       servers: [
         {
@@ -141,5 +146,197 @@ describe('Aggregator', () => {
     await aggregator.refreshTools();
     await aggregator.shutdown();
     expect(mockClientInstance.close).toHaveBeenCalled();
+  });
+
+  it('preserves existing routes when refresh fails transiently', async () => {
+    await aggregator.refreshTools();
+    await aggregator.callTool('mcp_notion_create_page', { title: 'Before failure' });
+
+    mockClientInstance.getServerNames.mockImplementationOnce(() => {
+      throw new Error('transient discovery failure');
+    });
+    await expect(aggregator.refreshTools()).rejects.toThrow('transient discovery failure');
+
+    await aggregator.callTool('mcp_notion_create_page', { title: 'After failure' });
+    expect(mockSession.callTool).toHaveBeenNthCalledWith(1, 'create_page', { title: 'Before failure' });
+    expect(mockSession.callTool).toHaveBeenNthCalledWith(2, 'create_page', { title: 'After failure' });
+  });
+
+  it('preserves routes for a server that fails during partial refresh', async () => {
+    const githubSession = {
+      listTools: vi.fn().mockResolvedValue([
+        {
+          name: 'list_issues',
+          description: 'List repository issues',
+          inputSchema: {
+            type: 'object',
+            properties: { repo: { type: 'string' } },
+            required: ['repo'],
+          },
+        },
+      ]),
+      callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'issues' }] }),
+    };
+
+    mockClientInstance.getServerNames.mockReturnValue(['notion', 'github']);
+    mockClientInstance.createSession.mockImplementation((name: string) => {
+      if (name === 'notion') return Promise.resolve(mockSession);
+      if (name === 'github') return Promise.resolve(githubSession);
+      return Promise.reject(new Error(`Unknown server: ${name}`));
+    });
+
+    aggregator = new Aggregator({
+      servers: [
+        {
+          name: 'notion',
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@notionhq/mcp'],
+          categories: ['productivity', 'notes', 'docs'],
+        },
+        {
+          name: 'github',
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-github'],
+          categories: ['code', 'issues'],
+        },
+      ],
+      autoDiscover: false,
+      analyzer: { relevanceThreshold: 0.1, maxToolsPerTurn: 5 },
+      cache: { enabled: true, ttlMs: 5000 },
+    });
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      await aggregator.refreshTools();
+      await aggregator.callTool('mcp_github_list_issues', { repo: 'acme/repo' });
+
+      githubSession.listTools.mockRejectedValueOnce(new Error('github temporary failure'));
+      vi.setSystemTime(new Date('2026-01-01T00:06:00Z'));
+      await aggregator.refreshTools();
+
+      await aggregator.callTool('mcp_github_list_issues', { repo: 'acme/repo-2' });
+      expect(githubSession.callTool).toHaveBeenNthCalledWith(1, 'list_issues', { repo: 'acme/repo' });
+      expect(githubSession.callTool).toHaveBeenNthCalledWith(2, 'list_issues', { repo: 'acme/repo-2' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('Aggregator (traditional mode)', () => {
+  let aggregator: Aggregator;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClientInstance.getServerNames.mockReset().mockReturnValue(['notion']);
+    mockClientInstance.getSession.mockReset().mockReturnValue(null);
+    mockClientInstance.createSession.mockReset().mockResolvedValue(mockSession);
+    mockClientInstance.close.mockReset().mockResolvedValue(undefined);
+    mockSession.callTool.mockReset().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
+    aggregator = new Aggregator({
+      mode: 'traditional',
+      servers: [
+        {
+          name: 'notion',
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@notionhq/mcp'],
+          categories: ['productivity', 'notes', 'docs'],
+        },
+      ],
+      autoDiscover: false,
+      analyzer: { relevanceThreshold: 0.1, maxToolsPerTurn: 5 },
+      cache: { enabled: true, ttlMs: 5000 },
+    });
+  });
+
+  it('getToolList returns only namespaced downstream tools', async () => {
+    await aggregator.refreshTools();
+    const tools = aggregator.getToolList();
+    expect(tools.map(t => t.name)).toEqual([
+      'mcp_notion_create_page',
+      'mcp_notion_search_pages',
+    ]);
+  });
+
+  it('find_tools is not available in traditional mode', async () => {
+    await aggregator.refreshTools();
+    await expect(
+      aggregator.callTool('find_tools', { need: 'search notion' }),
+    ).rejects.toThrow('Unknown tool');
+  });
+
+  it('traditional mode does not use smart cache path', async () => {
+    await aggregator.refreshTools();
+    await aggregator.callTool('mcp_notion_search_pages', { query: 'roadmap' });
+    await aggregator.callTool('mcp_notion_search_pages', { query: 'roadmap' });
+    expect(mockSession.callTool).toHaveBeenCalledTimes(2);
+  });
+
+  it('traditional mode preserves failed-server routes during partial refresh', async () => {
+    const githubSession = {
+      listTools: vi.fn().mockResolvedValue([
+        {
+          name: 'list_issues',
+          description: 'List repository issues',
+          inputSchema: {
+            type: 'object',
+            properties: { repo: { type: 'string' } },
+            required: ['repo'],
+          },
+        },
+      ]),
+      callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'issues' }] }),
+    };
+
+    mockClientInstance.getServerNames.mockReturnValue(['notion', 'github']);
+    mockClientInstance.createSession.mockImplementation((name: string) => {
+      if (name === 'notion') return Promise.resolve(mockSession);
+      if (name === 'github') return Promise.resolve(githubSession);
+      return Promise.reject(new Error(`Unknown server: ${name}`));
+    });
+
+    aggregator = new Aggregator({
+      mode: 'traditional',
+      servers: [
+        {
+          name: 'notion',
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@notionhq/mcp'],
+          categories: ['productivity', 'notes', 'docs'],
+        },
+        {
+          name: 'github',
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-github'],
+          categories: ['code', 'issues'],
+        },
+      ],
+      autoDiscover: false,
+      analyzer: { relevanceThreshold: 0.1, maxToolsPerTurn: 5 },
+      cache: { enabled: true, ttlMs: 5000 },
+    });
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      await aggregator.refreshTools();
+      await aggregator.callTool('mcp_github_list_issues', { repo: 'acme/repo' });
+
+      githubSession.listTools.mockRejectedValueOnce(new Error('github temporary failure'));
+      vi.setSystemTime(new Date('2026-01-01T00:06:00Z'));
+      await aggregator.refreshTools();
+
+      await aggregator.callTool('mcp_github_list_issues', { repo: 'acme/repo-2' });
+      expect(githubSession.callTool).toHaveBeenNthCalledWith(1, 'list_issues', { repo: 'acme/repo' });
+      expect(githubSession.callTool).toHaveBeenNthCalledWith(2, 'list_issues', { repo: 'acme/repo-2' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

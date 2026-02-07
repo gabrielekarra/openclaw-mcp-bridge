@@ -10,6 +10,14 @@ interface McpToolSchema {
   inputSchema: Record<string, unknown>;
 }
 
+type AggregatorMode = 'smart' | 'traditional';
+
+type RoutedTool = {
+  serverName: string;
+  toolName: string;
+  tool: ToolWithServer;
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null;
 }
@@ -42,37 +50,110 @@ function extractNeed(params: unknown): string {
   return typeof candidate === 'string' ? candidate : '';
 }
 
+function sanitizeName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_').toLowerCase();
+}
+
+function buildTraditionalToolName(
+  tool: ToolWithServer,
+  usedNames: Set<string>,
+): string {
+  const base = `mcp_${sanitizeName(tool.serverName)}_${sanitizeName(tool.name)}`;
+  if (!usedNames.has(base)) {
+    usedNames.add(base);
+    return base;
+  }
+
+  let suffix = 2;
+  let candidate = `${base}_${suffix}`;
+  while (usedNames.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}_${suffix}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
 export class Aggregator {
   private mcpLayer: McpLayer;
   private analyzer: ContextAnalyzer;
   private compressor: SchemaCompressor;
   private cache: ResultCache;
+  private mode: AggregatorMode;
 
   /** Maps compressed name → { serverName, toolName } for routing */
-  private routeMap = new Map<string, { serverName: string; toolName: string }>();
+  private routeMap = new Map<string, RoutedTool>();
 
   constructor(private config: BridgeConfig) {
     this.mcpLayer = new McpLayer(config);
     this.analyzer = new ContextAnalyzer();
     this.compressor = new SchemaCompressor();
     this.cache = new ResultCache(config.cache);
+    this.mode = config.mode === 'traditional' ? 'traditional' : 'smart';
   }
 
   /** Discover tools from all downstream MCP servers and build route map */
   async refreshTools(): Promise<void> {
     const tools = await this.mcpLayer.discoverTools();
+    const failedServers = new Set(this.mcpLayer.getLastDiscoveryStatus().failedServers);
+    const nextRouteMap = new Map<string, RoutedTool>();
+    if (this.mode === 'traditional') {
+      const usedNames = new Set<string>();
+      if (failedServers.size > 0) {
+        for (const [name, route] of this.routeMap) {
+          if (!failedServers.has(route.serverName)) continue;
+          nextRouteMap.set(name, route);
+          usedNames.add(name);
+        }
+      }
+
+      for (const tool of tools) {
+        const name = buildTraditionalToolName(tool, usedNames);
+        nextRouteMap.set(name, {
+          serverName: tool.serverName,
+          toolName: tool.name,
+          tool,
+        });
+      }
+      this.routeMap = nextRouteMap;
+      return;
+    }
+
     for (const tool of tools) {
       const compressed = this.compressor.compress(tool);
-      this.routeMap.set(compressed.name, {
+      nextRouteMap.set(compressed.name, {
         serverName: tool.serverName,
         toolName: tool.name,
+        tool,
       });
     }
+
+    if (failedServers.size > 0) {
+      for (const [name, route] of this.routeMap) {
+        if (!failedServers.has(route.serverName)) continue;
+        if (!nextRouteMap.has(name)) {
+          nextRouteMap.set(name, route);
+        }
+      }
+    }
+
+    this.routeMap = nextRouteMap;
   }
 
-  /** Return all tools in MCP Tool shape (find_tools meta-tool + downstream tools) */
+  /** Return tools in MCP Tool shape for the active mode */
   getToolList(): McpToolSchema[] {
     const tools: McpToolSchema[] = [];
+
+    if (this.mode === 'traditional') {
+      for (const [name, route] of this.routeMap) {
+        tools.push({
+          name,
+          description: route.tool.description ?? `${route.serverName}/${route.toolName}`,
+          inputSchema: route.tool.inputSchema ?? { type: 'object', properties: {} },
+        });
+      }
+      return tools;
+    }
 
     // Meta-tool: find_tools
     tools.push({
@@ -88,10 +169,8 @@ export class Aggregator {
     });
 
     // All compressed downstream tools
-    for (const [compressedName] of this.routeMap) {
-      const original = this.compressor.getOriginal(compressedName);
-      if (!original) continue;
-      const compressed = this.compressor.compress(original);
+    for (const [compressedName, route] of this.routeMap) {
+      const compressed = this.compressor.compress(route.tool);
       const desc = compressed.optionalHint
         ? `${compressed.shortDescription}. ${compressed.optionalHint}`
         : compressed.shortDescription;
@@ -110,13 +189,18 @@ export class Aggregator {
     name: string,
     params: Record<string, unknown>
   ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    if (name === 'find_tools') {
+    if (this.mode === 'smart' && name === 'find_tools') {
       return this.handleFindTools(params);
     }
 
     const route = this.routeMap.get(name);
     if (!route) {
       throw new Error(`Unknown tool: ${name}`);
+    }
+
+    if (this.mode === 'traditional') {
+      const result = await this.mcpLayer.callTool(route.serverName, route.toolName, params);
+      return result as { content: { type: string; text: string }[] };
     }
 
     // Check cache for read-only tools
@@ -167,6 +251,7 @@ export class Aggregator {
         this.routeMap.set(compressed.name, {
           serverName: tool.serverName,
           toolName: tool.name,
+          tool,
         });
       }
 
@@ -212,6 +297,7 @@ export class Aggregator {
       this.routeMap.set(compressed.name, {
         serverName: match.tool.serverName,
         toolName: match.tool.name,
+        tool: match.tool,
       });
     }
 

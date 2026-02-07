@@ -73,6 +73,8 @@ declare class McpLayer {
     private client;
     private toolCache;
     private serverEntries;
+    private lastSuccessfulServers;
+    private lastFailedServers;
     constructor(config: BridgeConfig);
     /** Convert our config to mcp-use's expected format and lazily create client */
     private getClient;
@@ -88,6 +90,11 @@ declare class McpLayer {
     shutdown(): Promise<void>;
     /** Get configured server names (for diagnostics) */
     getServerNames(): string[];
+    /** Get status for the most recent discovery pass */
+    getLastDiscoveryStatus(): {
+        successfulServers: string[];
+        failedServers: string[];
+    };
     /** Get info about all configured servers and their connection/tool state */
     getServerInfo(): Array<{
         name: string;
@@ -180,12 +187,13 @@ declare class Aggregator {
     private analyzer;
     private compressor;
     private cache;
+    private mode;
     /** Maps compressed name → { serverName, toolName } for routing */
     private routeMap;
     constructor(config: BridgeConfig);
     /** Discover tools from all downstream MCP servers and build route map */
     refreshTools(): Promise<void>;
-    /** Return all tools in MCP Tool shape (find_tools meta-tool + downstream tools) */
+    /** Return tools in MCP Tool shape for the active mode */
     getToolList(): McpToolSchema[];
     /** Call a tool by name (handles find_tools meta-tool and downstream routing) */
     callTool(name: string, params: Record<string, unknown>): Promise<{
