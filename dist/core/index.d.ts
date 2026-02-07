@@ -11,6 +11,7 @@ interface ServerEntry {
 }
 /** Full plugin configuration */
 interface BridgeConfig {
+    mode?: 'smart' | 'traditional';
     servers?: ServerEntry[];
     autoDiscover?: boolean;
     analyzer?: AnalyzerConfig;

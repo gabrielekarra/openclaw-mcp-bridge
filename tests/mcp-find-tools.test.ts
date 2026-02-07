@@ -76,9 +76,9 @@ describe('mcp tools edge cases', () => {
     mockSession.callTool.mockReset().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
   });
 
-  it('registers mcp_find_tools, mcp_call_tool, and mcp_list_servers', () => {
+  it('registers mcp_find_tools, mcp_call_tool, and mcp_list_servers', async () => {
     const api = createMockApi({ servers: [], autoDiscover: false });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     expect(api._tools.has('mcp_find_tools')).toBe(true);
     expect(api._tools.has('mcp_call_tool')).toBe(true);
@@ -88,7 +88,7 @@ describe('mcp tools edge cases', () => {
   it('no servers configured returns empty result', async () => {
     mockClientInstance.getServerNames.mockReturnValue([]);
     const api = createMockApi({ servers: [], autoDiscover: false });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'anything' });
     expect(result.found).toBe(0);
@@ -100,7 +100,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const empty = await api._tools.get('mcp_find_tools').execute({ need: '' });
     expect(empty.found).toBeGreaterThan(0);
@@ -115,7 +115,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const undef = await api._tools.get('mcp_find_tools').execute(undefined);
     expect(undef.found).toBeGreaterThan(0);
@@ -136,7 +136,7 @@ describe('mcp tools edge cases', () => {
       autoDiscover: false,
       analyzer: { relevanceThreshold: 0.1 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute(payload);
     expect(result.found).toBeGreaterThan(0);
@@ -148,7 +148,7 @@ describe('mcp tools edge cases', () => {
       autoDiscover: false,
       analyzer: { relevanceThreshold: 0.1 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute(
       'chatcmpl-tool-2291b82deb5e4538b27009be0cc08d4d',
@@ -168,7 +168,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'anything' });
     expect(result.found).toBe(0);
@@ -185,7 +185,7 @@ describe('mcp tools edge cases', () => {
       autoDiscover: false,
       analyzer: { relevanceThreshold: 0.1 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'create page' });
     expect(result.found).toBeGreaterThan(0);
@@ -197,7 +197,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_call_tool').execute({
       server: 'notion',
@@ -214,7 +214,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     await api._tools.get('mcp_call_tool').execute(
       'chatcmpl-tool-0ec53e05ad7448f49e20c4dd35b185da',
@@ -235,7 +235,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     await api._tools.get('mcp_call_tool').execute({
       server: 'notion',
@@ -251,7 +251,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_call_tool').execute({
       server: 'notion',
@@ -267,7 +267,7 @@ describe('mcp tools edge cases', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_call_tool').execute({ arguments: { foo: 'bar' } });
     expect(result.error).toContain('Missing required fields');
@@ -288,7 +288,7 @@ describe('mcp_list_servers', () => {
   it('returns empty list when no servers configured', async () => {
     mockClientInstance.getServerNames.mockReturnValue([]);
     const api = createMockApi({ servers: [], autoDiscover: false });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_list_servers').execute({});
     expect(result.total).toBe(0);
@@ -301,7 +301,7 @@ describe('mcp_list_servers', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_list_servers').execute({});
     expect(result.total).toBe(1);
@@ -323,7 +323,7 @@ describe('hook compatibility', () => {
 
   it('registers modern hooks and handles missing messages', async () => {
     const api = createMockApi({ servers: [], autoDiscover: false });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const beforeAgentStart = api._hooks.get('before_agent_start');
     expect(beforeAgentStart).toBeTypeOf('function');
@@ -333,7 +333,7 @@ describe('hook compatibility', () => {
     await expect(beforeAgentStart?.(undefined)).resolves.not.toThrow();
   });
 
-  it('supports legacy api shape without api.on', () => {
+  it('supports legacy api shape without api.on', async () => {
     const legacyApi = {
       config: { servers: [], autoDiscover: false },
       registerTool: vi.fn(),
@@ -341,7 +341,7 @@ describe('hook compatibility', () => {
       onShutdown: vi.fn(),
     };
 
-    expect(() => mcpBridge(legacyApi)).not.toThrow();
+    await expect(mcpBridge(legacyApi)).resolves.toBeUndefined();
     expect(legacyApi.onBeforeAgentTurn).toHaveBeenCalledTimes(1);
     expect(legacyApi.onShutdown).toHaveBeenCalledTimes(1);
   });

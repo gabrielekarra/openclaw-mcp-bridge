@@ -113,9 +113,9 @@ describe('Integration: plugin flow', () => {
     githubSession.callTool.mockReset().mockResolvedValue({ content: [{ type: 'text', text: '[issue1, issue2]' }] });
   });
 
-  it('registers all bridge tools with expected schemas', () => {
+  it('registers all bridge tools with expected schemas', async () => {
     const api = createMockApi({ servers: [], autoDiscover: false });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     expect(api._tools.has('mcp_find_tools')).toBe(true);
     expect(api._tools.has('mcp_call_tool')).toBe(true);
@@ -128,9 +128,9 @@ describe('Integration: plugin flow', () => {
     expect(callTool.parameters.required).toEqual(['server', 'tool']);
   });
 
-  it('registers modern OpenClaw hooks', () => {
+  it('registers modern OpenClaw hooks', async () => {
     const api = createMockApi({ servers: [], autoDiscover: false });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     expect(api._getHook('before_agent_start')).toBeTypeOf('function');
     expect(api._getHook('gateway_stop')).toBeTypeOf('function');
@@ -139,7 +139,7 @@ describe('Integration: plugin flow', () => {
   it('returns graceful empty result when no servers configured', async () => {
     mockClientInstance.getServerNames.mockReturnValue([]);
     const api = createMockApi({ servers: [], autoDiscover: false });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'anything' });
     expect(result.found).toBe(0);
@@ -153,7 +153,7 @@ describe('Integration: plugin flow', () => {
       autoDiscover: false,
       analyzer: { relevanceThreshold: 0.99 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'xyzzy foobar' });
     expect(result.found).toBe(0);
@@ -170,7 +170,7 @@ describe('Integration: plugin flow', () => {
       analyzer: { maxToolsPerTurn: 5, relevanceThreshold: 0.1 },
       cache: { enabled: true, ttlMs: 5000 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const findResult = await api._tools.get('mcp_find_tools').execute({ need: 'create a notion page' });
     expect(findResult.found).toBeGreaterThan(0);
@@ -192,7 +192,7 @@ describe('Integration: plugin flow', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     await api._tools.get('mcp_call_tool').execute(
       'chatcmpl-tool-0ec53e05ad7448f49e20c4dd35b185da',
@@ -217,7 +217,7 @@ describe('Integration: plugin flow', () => {
       autoDiscover: false,
       analyzer: { relevanceThreshold: 0.1 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'create a page in notion workspace' });
     expect(result.tools[0].server).toBe('notion');
@@ -232,7 +232,7 @@ describe('Integration: plugin flow', () => {
       autoDiscover: false,
       analyzer: { relevanceThreshold: 0.1 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_find_tools').execute({ need: 'list issues in github repository' });
     expect(result.tools[0].server).toBe('github');
@@ -244,7 +244,7 @@ describe('Integration: plugin flow', () => {
       autoDiscover: false,
       cache: { enabled: true, ttlMs: 5000 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     await api._tools.get('mcp_call_tool').execute({
       server: 'notion',
@@ -266,7 +266,7 @@ describe('Integration: plugin flow', () => {
       autoDiscover: false,
       cache: { enabled: true, ttlMs: 5000 },
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     await api._tools.get('mcp_call_tool').execute({
       server: 'notion',
@@ -289,7 +289,7 @@ describe('Integration: plugin flow', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const result = await api._tools.get('mcp_call_tool').execute({
       server: 'notion',
@@ -305,7 +305,7 @@ describe('Integration: plugin flow', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx', categories: ['notes'] }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     const hook = api._getHook('before_agent_start');
     await hook?.({ messages: [{ role: 'user', content: 'create a page in notion' }] });
@@ -319,7 +319,7 @@ describe('Integration: plugin flow', () => {
       servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
       autoDiscover: false,
     });
-    mcpBridge(api);
+    await mcpBridge(api);
 
     await api._tools.get('mcp_find_tools').execute({ need: 'anything' });
 
@@ -327,5 +327,120 @@ describe('Integration: plugin flow', () => {
     await hook?.({ reason: 'test' });
 
     expect(mockClientInstance.close).toHaveBeenCalled();
+  });
+});
+
+describe('Integration: traditional mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClientInstance.getServerNames.mockReset().mockReturnValue(['notion', 'github']);
+    mockClientInstance.getSession.mockReset().mockReturnValue(null);
+    mockClientInstance.createSession.mockReset().mockImplementation((name: string) => {
+      if (name === 'notion') return Promise.resolve(notionSession);
+      if (name === 'github') return Promise.resolve(githubSession);
+      return Promise.reject(new Error(`Unknown server: ${name}`));
+    });
+    mockClientInstance.close.mockReset().mockResolvedValue(undefined);
+    notionSession.listTools.mockClear();
+    notionSession.callTool.mockReset().mockResolvedValue({ content: [{ type: 'text', text: 'Page created: abc123' }] });
+    githubSession.listTools.mockClear();
+    githubSession.callTool.mockReset().mockResolvedValue({ content: [{ type: 'text', text: '[issue1, issue2]' }] });
+  });
+
+  it('registers all MCP tools at startup with no smart meta tools', async () => {
+    const api = createMockApi({
+      mode: 'traditional',
+      servers: [
+        { name: 'notion', transport: 'stdio', command: 'npx' },
+        { name: 'github', transport: 'stdio', command: 'npx' },
+      ],
+      autoDiscover: false,
+    });
+
+    await mcpBridge(api);
+
+    expect(api._tools.has('mcp_find_tools')).toBe(false);
+    expect(api._tools.has('mcp_call_tool')).toBe(false);
+    expect(api._tools.has('mcp_list_servers')).toBe(true);
+    expect(api._tools.has('mcp_notion_create_page')).toBe(true);
+    expect(api._tools.has('mcp_notion_search_pages')).toBe(true);
+    expect(api._tools.has('mcp_github_list_issues')).toBe(true);
+    expect(api._tools.has('mcp_github_create_pull_request')).toBe(true);
+  });
+
+  it('executes traditional tools directly against the MCP server', async () => {
+    const api = createMockApi({
+      mode: 'traditional',
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
+      autoDiscover: false,
+    });
+
+    await mcpBridge(api);
+
+    const createTool = api._tools.get('mcp_notion_create_page');
+    await createTool.execute({ title: 'Traditional Page' });
+    await createTool.execute(
+      'chatcmpl-tool-123',
+      { title: 'Traditional Page 2' },
+      {},
+      null,
+    );
+
+    expect(notionSession.callTool).toHaveBeenNthCalledWith(1, 'create_page', { title: 'Traditional Page' });
+    expect(notionSession.callTool).toHaveBeenNthCalledWith(2, 'create_page', { title: 'Traditional Page 2' });
+  });
+
+  it('unwraps wrapped traditional tool params before execution', async () => {
+    const api = createMockApi({
+      mode: 'traditional',
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
+      autoDiscover: false,
+    });
+
+    await mcpBridge(api);
+
+    const searchTool = api._tools.get('mcp_notion_search_pages');
+    await searchTool.execute({ input: { query: 'wrapped-input' } });
+    await searchTool.execute({ args: { query: 'wrapped-args' } });
+
+    expect(notionSession.callTool).toHaveBeenNthCalledWith(1, 'search_pages', { query: 'wrapped-input' });
+    expect(notionSession.callTool).toHaveBeenNthCalledWith(2, 'search_pages', { query: 'wrapped-args' });
+  });
+
+  it('preserves top-level input when schema defines input as a real field', async () => {
+    notionSession.listTools.mockResolvedValueOnce([
+      {
+        name: 'accepts_input_field',
+        description: 'Tool that expects input at the top level',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: { type: 'object' },
+            keep: { type: 'string' },
+          },
+          required: ['input'],
+        },
+      },
+    ]);
+
+    const api = createMockApi({
+      mode: 'traditional',
+      servers: [{ name: 'notion', transport: 'stdio', command: 'npx' }],
+      autoDiscover: false,
+    });
+
+    await mcpBridge(api);
+
+    const inputTool = api._tools.get('mcp_notion_accepts_input_field');
+    await inputTool.execute({ input: { q: 'wrapped-but-legit' }, keep: 'yes' });
+    await inputTool.execute({ input: { q: 'single-key' } });
+
+    expect(notionSession.callTool).toHaveBeenNthCalledWith(1, 'accepts_input_field', {
+      input: { q: 'wrapped-but-legit' },
+      keep: 'yes',
+    });
+    expect(notionSession.callTool).toHaveBeenNthCalledWith(2, 'accepts_input_field', {
+      input: { q: 'single-key' },
+    });
   });
 });

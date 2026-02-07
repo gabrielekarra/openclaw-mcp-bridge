@@ -91,7 +91,61 @@ For Claude Desktop, add this to `claude_desktop_config.json`:
 }
 ```
 
+## Operating Modes
+
+The plugin supports two operating modes controlled by one config key:
+
+```json
+{
+  "mode": "smart"
+}
+```
+
+- `smart` (default, original design): uses relevance analysis, ranking, thresholds, and optional caching.
+- `traditional`: registers all discovered MCP tools at startup with no relevance filtering or lazy tool activation.
+
+Migration note:
+- If you want all MCP tools always visible, use `mode: traditional`.
+
+### Smart mode example (default)
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "mode": "smart",
+          "autoDiscover": true
+        }
+      }
+    }
+  }
+}
+```
+
+### Traditional mode example
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "mode": "traditional",
+          "autoDiscover": true
+        }
+      }
+    }
+  }
+}
+```
+
 ## Registered Tools (Plugin Mode)
+
+### Smart mode tools
 
 ### `mcp_find_tools`
 
@@ -137,6 +191,12 @@ Lists configured MCP servers with discovered tool counts.
 Examples:
 - "What MCP servers are connected?"
 - "Show me available servers"
+
+### Traditional mode tools
+
+- Registers every discovered MCP tool at startup.
+- Tool names are namespaced as `mcp_<server>_<tool>`.
+- Each registered tool directly calls its underlying MCP server tool.
 
 ## How the Flow Works
 
@@ -203,13 +263,14 @@ See `examples/` for ready-to-use configs.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
+| `mode` | `"smart" \| "traditional"` | `"smart"` | Operating mode |
 | `servers` | array | `[]` | Explicit MCP server definitions |
 | `autoDiscover` | boolean | `true` | Load servers from `~/.mcp.json` |
-| `analyzer.maxToolsPerTurn` | number | `5` | Maximum ranked tools returned |
-| `analyzer.relevanceThreshold` | number | `0.3` | Minimum relevance score (0-1) |
-| `cache.enabled` | boolean | `true` | Enable result cache |
-| `cache.ttlMs` | number | `30000` | Cache TTL in ms |
-| `cache.maxEntries` | number | `100` | Max cache entries |
+| `analyzer.maxToolsPerTurn` | number | `5` | Maximum ranked tools returned (`smart` mode only) |
+| `analyzer.relevanceThreshold` | number | `0.3` | Minimum relevance score (`smart` mode only) |
+| `cache.enabled` | boolean | `true` | Enable result cache (`smart` mode only) |
+| `cache.ttlMs` | number | `30000` | Cache TTL in ms (`smart` mode only) |
+| `cache.maxEntries` | number | `100` | Max cache entries (`smart` mode only) |
 
 ## Development
 

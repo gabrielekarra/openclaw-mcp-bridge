@@ -6,6 +6,12 @@
   "configSchema": {
     "type": "object",
     "properties": {
+      "mode": {
+        "type": "string",
+        "enum": ["smart", "traditional"],
+        "default": "smart",
+        "description": "Operating mode. smart = relevance-based tool selection, traditional = register all tools at startup."
+      },
       "servers": {
         "type": "array",
         "description": "Explicit MCP server definitions",
@@ -28,6 +34,7 @@
       },
       "analyzer": {
         "type": "object",
+        "description": "Advanced smart-mode settings. Ignored when mode is traditional.",
         "properties": {
           "maxToolsPerTurn": { "type": "number", "default": 5 },
           "relevanceThreshold": { "type": "number", "default": 0.3 },
@@ -37,6 +44,7 @@
       },
       "cache": {
         "type": "object",
+        "description": "Smart-mode result caching. Ignored when mode is traditional.",
         "properties": {
           "enabled": { "type": "boolean", "default": true },
           "ttlMs": { "type": "number", "default": 30000 },
